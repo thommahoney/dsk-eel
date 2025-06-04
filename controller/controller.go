@@ -11,6 +11,7 @@ import (
 type Controller struct {
 	device *hid.Device
 	data []byte
+	logger *slog.Logger
 
 	Joystick *Joystick
 	Buttons *Buttons
@@ -22,6 +23,8 @@ type ControllerState struct {
 }
 
 type Joystick struct {
+	logger *slog.Logger
+
 	Manufacturer string
 	Product string
 }
@@ -64,7 +67,9 @@ func (d Direction) String() string {
 	return "Unknown"
 }
 
-type Buttons struct {}
+type Buttons struct {
+	logger *slog.Logger
+}
 
 type ButtonStatus int
 
@@ -105,6 +110,7 @@ func (bs ButtonStatus) String() string {
 func NewController(logger *slog.Logger) (*Controller, error) {
 	c := &Controller{
 		data: make([]byte, 8),
+		logger: logger,
 	}
 
 	if err := c.Init(); err != nil {
@@ -126,10 +132,10 @@ func NewController(logger *slog.Logger) (*Controller, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	logger.Info("connected to joystick", "manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
+	c.logger.Info("connected to joystick", "manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
 
-	c.Joystick = NewJoystick()
-	c.Buttons = NewButtons()
+	c.Joystick = NewJoystick(logger)
+	c.Buttons = NewButtons(logger)
 
 	return c, nil
 }
@@ -158,15 +164,12 @@ func (c *Controller) GetProduct() (string, error) {
 }
 
 func (c *Controller) GetState() (*ControllerState, error) {
-	_, err := c.device.Read(c.data)
+	l, err := c.device.Read(c.data)
 	if err != nil {
 		return nil, err
 	}
 
-	// @TODO slog bytes and length
-	// if verbosity >= LOGLEVEL_TRACE {
-	// 	fmt.Printf("read %d bytes: %v\n", l, b)
-	// }
+	slog.Debug("read from device", "length", l, "bytes", c.data)
 
 	cs := &ControllerState {
 		Direction: c.Joystick.GetDirection(c.data),
@@ -175,17 +178,16 @@ func (c *Controller) GetState() (*ControllerState, error) {
 	return cs, nil
 }
 
-func NewJoystick() *Joystick {
-	return &Joystick{}
+func NewJoystick(logger *slog.Logger) *Joystick {
+	return &Joystick{
+		logger: logger,
+	}
 }
 
 func (j *Joystick) GetDirection(data []byte) Direction {
 	updown, leftright := data[0]>>6, data[1]>>6
 
-	// @TODO slog updown and leftright
-	// if verbosity >= LOGLEVEL_TRACE {
-	//	fmt.Printf("updown: [%02b] leftright: [%02b]\n", updown, leftright)
-	// }
+	j.logger.Debug("GetDirection", "updown", updown, "leftright", leftright)
 
 	direction := 0
 	direction += int(updown<<2)
@@ -194,17 +196,16 @@ func (j *Joystick) GetDirection(data []byte) Direction {
 	return Direction(direction)
 }
 
-func NewButtons() *Buttons {
-	return &Buttons{}
+func NewButtons(logger *slog.Logger) *Buttons {
+	return &Buttons{
+		logger: logger,
+	}
 }
 
 func (b *Buttons) GetStatus(data []byte) ButtonStatus {
 	buttons := data[5]>>4
 
-	// @TODO slog button state
-	// if verbosity >= LOGLEVEL_INFO {
-	// 	fmt.Printf("buttons: [%04b] ", buttons)
-	// }
+	b.logger.Debug("GetStatus", "buttons", buttons)
 
 	return ButtonStatus(buttons)
 }
