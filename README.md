@@ -21,11 +21,11 @@ Drawn below is a top-down diagram of the dome structure with segments labeled by
 ![Dome Diagram](./docs/dome-diagram.png)
 
 
-This diagram is the above diagram with only the "B" length segments drawn. The colors are changed to help conceptualize how the Eel game is modeled.
+The following diagram is the above diagram with only the "B" length segments drawn. The colors are changed to help conceptualize how the Eel game is modeled.
 
-Note: This modeling doesn't necessarily match the way the lights are wired up and may need to change later.
+Note: This modeling matches the way the lights are wired up.
 
-Each of the 5 dome sections are colored separately (Blue, Green, Red, Pink, Orange). All sections have 10 segments each except for the Orange section which has 9 segments.
+Each of the 5 dome sections are colored separately (Blue, Red, Purple, Yellow, Green). All sections have 10 segments each except for the Blue door section which has only 9 segments.
 
 Note that these colors are just for conceptualization and modeling but aren't otherwise meaningful.
 
