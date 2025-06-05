@@ -10,15 +10,15 @@ import (
 
 type Controller struct {
 	device *hid.Device
-	data []byte
+	data   []byte
 	logger *slog.Logger
 
 	Joystick *Joystick
-	Buttons *Buttons
+	Buttons  *Buttons
 }
 
 type ControllerState struct {
-	Direction Direction
+	Direction    Direction
 	ButtonStatus ButtonStatus
 }
 
@@ -26,21 +26,21 @@ type Joystick struct {
 	logger *slog.Logger
 
 	Manufacturer string
-	Product string
+	Product      string
 }
 
 type Direction int
 
 const (
-	Dir_Neutral = 0b0101
-	Dir_North = 0b1101
-	Dir_NorthEast = 0b1111
-	Dir_East = 0b0111
-	Dir_SouthEast = 0b0011
-	Dir_South = 0b0001
-	Dir_SouthWest = 0b0000
-	Dir_West = 0b0100
-	Dir_NorthWest = 0b1100
+	Dir_Neutral   = Direction(0b0101)
+	Dir_North     = Direction(0b1101)
+	Dir_NorthEast = Direction(0b1111)
+	Dir_East      = Direction(0b0111)
+	Dir_SouthEast = Direction(0b0011)
+	Dir_South     = Direction(0b0001)
+	Dir_SouthWest = Direction(0b0000)
+	Dir_West      = Direction(0b0100)
+	Dir_NorthWest = Direction(0b1100)
 )
 
 func (d Direction) String() string {
@@ -74,11 +74,11 @@ type Buttons struct {
 type ButtonStatus int
 
 const (
-	Btn_None = 0b0000
-	Btn_White = 0b0001
-	Btn_Red = 0b0010
-	Btn_Yellow = 0b0100
-	Btn_Blue = 0b1000
+	Btn_None   = ButtonStatus(0b0000)
+	Btn_White  = ButtonStatus(0b0001)
+	Btn_Red    = ButtonStatus(0b0010)
+	Btn_Yellow = ButtonStatus(0b0100)
+	Btn_Blue   = ButtonStatus(0b1000)
 )
 
 func (bs ButtonStatus) String() string {
@@ -87,16 +87,16 @@ func (bs ButtonStatus) String() string {
 	}
 
 	s := ""
-	if bs & Btn_White > 0 {
+	if bs&Btn_White > 0 {
 		s += "⚪️"
 	}
-	if bs & Btn_Red > 0 {
+	if bs&Btn_Red > 0 {
 		s += "️🔴"
 	}
-	if bs & Btn_Yellow > 0 {
+	if bs&Btn_Yellow > 0 {
 		s += "🟡"
 	}
-	if bs & Btn_Blue > 0 {
+	if bs&Btn_Blue > 0 {
 		s += "🔵"
 	}
 
@@ -109,7 +109,7 @@ func (bs ButtonStatus) String() string {
 
 func NewController(logger *slog.Logger) (*Controller, error) {
 	c := &Controller{
-		data: make([]byte, 8),
+		data:   make([]byte, 8),
 		logger: logger,
 	}
 
@@ -144,7 +144,7 @@ func (c *Controller) Init() error {
 	if err := hid.Init(); err != nil {
 		return err
 	}
-	return nil	
+	return nil
 }
 
 func (c *Controller) GetManufacturer() (string, error) {
@@ -171,8 +171,8 @@ func (c *Controller) GetState() (*ControllerState, error) {
 
 	slog.Debug("read from device", "length", l, "bytes", c.data)
 
-	cs := &ControllerState {
-		Direction: c.Joystick.GetDirection(c.data),
+	cs := &ControllerState{
+		Direction:    c.Joystick.GetDirection(c.data),
 		ButtonStatus: c.Buttons.GetStatus(c.data),
 	}
 	return cs, nil
@@ -190,7 +190,7 @@ func (j *Joystick) GetDirection(data []byte) Direction {
 	j.logger.Debug("GetDirection", "updown", updown, "leftright", leftright)
 
 	direction := 0
-	direction += int(updown<<2)
+	direction += int(updown << 2)
 	direction += int(leftright)
 
 	return Direction(direction)
@@ -203,7 +203,7 @@ func NewButtons(logger *slog.Logger) *Buttons {
 }
 
 func (b *Buttons) GetStatus(data []byte) ButtonStatus {
-	buttons := data[5]>>4
+	buttons := data[5] >> 4
 
 	b.logger.Debug("GetStatus", "buttons", buttons)
 

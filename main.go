@@ -22,8 +22,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var prevDirection controller.Direction = controller.Dir_Neutral
-	var prevButtons controller.ButtonStatus = controller.Btn_None
+	var prevDirection controller.Direction
+	var prevButtons controller.ButtonStatus
 
 	for {
 		state, err := c.GetState()
@@ -44,10 +44,6 @@ func main() {
 }
 
 func NewLogger(verbosity int) *slog.Logger {
-	// -vv: LevelDebug
-	// -v: LevelInfo
-	// LevelWarn
-	// LevelError
 	logLevel := slog.LevelWarn
 	if verbosity > 2 {
 		verbosity = 2
@@ -56,9 +52,9 @@ func NewLogger(verbosity int) *slog.Logger {
 	case 0:
 		logLevel = slog.LevelWarn
 	case 1:
-		logLevel = slog.LevelInfo
+		logLevel = slog.LevelInfo // -v
 	case 2:
-		logLevel = slog.LevelDebug
+		logLevel = slog.LevelDebug // -vv
 	}
 
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
