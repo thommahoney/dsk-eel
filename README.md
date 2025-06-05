@@ -16,7 +16,7 @@ Documentation to come.
 
 ## Design Notes
 
-
+![Dome Diagram](./docs/dome-diagram.png)
 
 ## Author
 
