@@ -26,8 +26,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var prevDirection controller.Direction
-	var prevButtons controller.ButtonStatus
+	prevDirection := controller.Dir_Neutral
+	prevButtons := controller.Btn_None
 
 	for {
 		state, err := c.GetState()
