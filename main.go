@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/thommahoney/dsk-eel/controller"
+	"github.com/thommahoney/dsk-eel/game"
 )
 
 func main() {
@@ -16,6 +17,9 @@ func main() {
 	pflag.Parse()
 
 	logger := NewLogger(verbosity)
+
+	game := game.NewGame(logger)
+	game.Start()
 
 	c, err := controller.NewController(logger)
 	if err != nil {
