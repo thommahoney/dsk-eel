@@ -1,5 +1,8 @@
 package game
 
+const (
+	SegmentLength = 22
+)
 // Ridiculously long function for initializing the Game
 func (g *Game) Init() {
 	segments := make([]Segment, 49)

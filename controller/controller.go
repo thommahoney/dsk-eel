@@ -15,6 +15,7 @@ type Controller struct {
 
 	Joystick *Joystick
 	Buttons  *Buttons
+	Handler func(ControllerState)
 }
 
 type ControllerState struct {
@@ -107,22 +108,16 @@ func (bs ButtonStatus) String() string {
 	return s
 }
 
-func NewController(logger *slog.Logger) (*Controller, error) {
+func NewController(logger *slog.Logger, handleFunc func(ControllerState)) (*Controller, error) {
 	c := &Controller{
 		data:   make([]byte, 8),
 		logger: logger,
+		Handler: handleFunc,
 	}
 
 	if err := c.Init(); err != nil {
 		return nil, err
 	}
-
-	d, err := hid.OpenPath("/dev/hidraw3")
-	if err != nil {
-		return nil, err
-	}
-
-	c.device = d
 
 	mfr, err := c.GetManufacturer()
 	if err != nil {
@@ -144,6 +139,40 @@ func (c *Controller) Init() error {
 	if err := hid.Init(); err != nil {
 		return err
 	}
+
+	d, err := hid.OpenPath("/dev/hidraw3")
+	if err != nil {
+		return err
+	}
+
+	c.device = d
+
+	go func() {
+		prevDirection := Dir_Neutral
+		prevButtons := Btn_None
+		for {
+			changed := false
+			state, err := c.GetState()
+			if err != nil {
+				log.Fatal("error retrieving controller state:", err)
+			}
+
+			if state.Direction != prevDirection {
+				prevDirection = state.Direction
+				changed = true
+			}
+
+			if state.ButtonStatus != prevButtons {
+				prevButtons = state.ButtonStatus
+				changed = true
+			}
+
+			if changed && c.Handler != nil {
+				c.Handler(*state)
+			}
+		}
+	}()
+
 	return nil
 }
 

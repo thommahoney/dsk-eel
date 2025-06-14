@@ -1,13 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"log/slog"
 	"os"
 
 	"github.com/spf13/pflag"
-	"github.com/thommahoney/dsk-eel/controller"
 	"github.com/thommahoney/dsk-eel/game"
 )
 
@@ -19,32 +16,7 @@ func main() {
 	logger := NewLogger(verbosity)
 
 	game := game.NewGame(logger)
-	game.Start()
-
-	c, err := controller.NewController(logger)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	prevDirection := controller.Dir_Neutral
-	prevButtons := controller.Btn_None
-
-	for {
-		state, err := c.GetState()
-		if err != nil {
-			log.Fatal("error retrieving controller state:", err)
-		}
-
-		if state.Direction != prevDirection {
-			prevDirection = state.Direction
-			fmt.Println("joystick:", state.Direction)
-		}
-
-		if state.ButtonStatus != prevButtons {
-			prevButtons = state.ButtonStatus
-			fmt.Println("buttons:", state.ButtonStatus)
-		}
-	}
+	game.Run()
 }
 
 func NewLogger(verbosity int) *slog.Logger {
