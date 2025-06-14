@@ -35,7 +35,7 @@ func NewGame(logger *slog.Logger) *Game {
 }
 
 func (g *Game) Run() {
-	fmt.Println("Starting game")
+	g.logger.Info("Starting game")
 
 	var wg sync.WaitGroup
 
