@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"sync"
 
 	"github.com/thommahoney/dsk-eel/controller"
@@ -15,11 +16,13 @@ type Game struct {
 
 	Segments []Segment
 	Controller *controller.Controller
+	IP net.IP
 }
 
-func NewGame(logger *slog.Logger) *Game {
+func NewGame(logger *slog.Logger, ip net.IP) *Game {
 	game := &Game{
 		logger: logger,
+		IP: ip,
 	}
 
 	game.Init()

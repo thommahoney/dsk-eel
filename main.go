@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"net"
 	"os"
 
 	"github.com/spf13/pflag"
@@ -11,11 +12,15 @@ import (
 func main() {
 	var verbosity int
 	pflag.CountVarP(&verbosity, "verbose", "v", "set verbosity level eg. -v, -vv, -vvv etc.")
+
+	var ip net.IP
+	pflag.IPVar(&ip, "addr", net.IP("127.0.0.1"), "IP address of Chromatik")
+
 	pflag.Parse()
 
 	logger := NewLogger(verbosity)
 
-	game := game.NewGame(logger)
+	game := game.NewGame(logger, ip)
 	game.Run()
 }
 
