@@ -6,21 +6,21 @@ import (
 	"os"
 
 	"github.com/spf13/pflag"
+	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/game"
 )
 
 func main() {
-	var verbosity int
-	pflag.CountVarP(&verbosity, "verbose", "v", "set verbosity level eg. -v, -vv, -vvv etc.")
+	config := config.Config{}
 
-	var ip net.IP
-	pflag.IPVar(&ip, "addr", net.IP("127.0.0.1"), "IP address of Chromatik")
+	pflag.CountVarP(&config.Verbosity, "verbose", "v", "set verbosity level eg. -v, -vv, -vvv etc.")
+	pflag.IPVar(&config.IP, "addr", net.IP("127.0.0.1"), "IP address of Chromatik")
 
 	pflag.Parse()
 
-	logger := NewLogger(verbosity)
+	logger := NewLogger(config.Verbosity)
 
-	game := game.NewGame(logger, ip)
+	game := game.NewGame(logger, config.IP)
 	game.Run()
 }
 
