@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	IP net.IP
-	Logger slog.Logger
+	Logger *slog.Logger
+	NoJoy bool
 	Verbosity int
 }

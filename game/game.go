@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
 )
 
@@ -17,22 +18,26 @@ type Game struct {
 	Segments []Segment
 	Controller *controller.Controller
 	IP net.IP
+	NoJoy bool
 }
 
-func NewGame(logger *slog.Logger, ip net.IP) *Game {
+func NewGame(config *config.Config) *Game {
 	game := &Game{
-		logger: logger,
-		IP: ip,
+		logger: config.Logger,
+		IP: config.IP,
+		NoJoy: config.NoJoy,
 	}
 
 	game.Init()
 
-	c, err := controller.NewController(logger, game.HandleControllerState)
-	if err != nil {
-		log.Fatal(err)
-	}
+	if !game.NoJoy {
+		c, err := controller.NewController(config.Logger, game.HandleControllerState)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	game.Controller = c
+		game.Controller = c
+	}
 
 	return game
 }

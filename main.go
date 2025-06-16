@@ -15,12 +15,13 @@ func main() {
 
 	pflag.CountVarP(&config.Verbosity, "verbose", "v", "set verbosity level eg. -v, -vv, -vvv etc.")
 	pflag.IPVar(&config.IP, "addr", net.IP("127.0.0.1"), "IP address of Chromatik")
+	pflag.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
 
 	pflag.Parse()
 
-	logger := NewLogger(config.Verbosity)
+	config.Logger = NewLogger(config.Verbosity)
 
-	game := game.NewGame(logger, config.IP)
+	game := game.NewGame(&config)
 	game.Run()
 }
 
