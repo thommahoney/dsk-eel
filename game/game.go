@@ -49,7 +49,7 @@ func (g *Game) Run() {
 
 	wg.Add(1)
 
-	// draw
+	g.Draw()
 
 	wg.Wait()
 }
