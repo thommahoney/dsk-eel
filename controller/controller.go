@@ -15,7 +15,7 @@ type Controller struct {
 
 	Joystick *Joystick
 	Buttons  *Buttons
-	Handler func(ControllerState)
+	Handler  func(ControllerState)
 }
 
 type ControllerState struct {
@@ -110,8 +110,8 @@ func (bs ButtonStatus) String() string {
 
 func NewController(logger *slog.Logger, handleFunc func(ControllerState)) (*Controller, error) {
 	c := &Controller{
-		data:   make([]byte, 8),
-		logger: logger,
+		data:    make([]byte, 8),
+		logger:  logger,
 		Handler: handleFunc,
 	}
 

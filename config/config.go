@@ -6,8 +6,9 @@ import (
 )
 
 type Config struct {
-	IP net.IP
-	Logger *slog.Logger
-	NoJoy bool
-	Verbosity int
+	ArtNetDest   net.IP
+	ListenSubnet string
+	Logger       *slog.Logger
+	NoJoy        bool
+	Verbosity    int
 }

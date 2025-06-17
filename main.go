@@ -13,8 +13,9 @@ import (
 func main() {
 	config := config.Config{}
 
-	pflag.CountVarP(&config.Verbosity, "verbose", "v", "set verbosity level eg. -v, -vv, -vvv etc.")
-	pflag.IPVar(&config.IP, "addr", net.IP("127.0.0.1"), "IP address of Chromatik")
+	pflag.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
+	pflag.IPVar(&config.ArtNetDest, "chromatik", net.IP("127.0.0.1"), "IP address of Chromatik")
+	pflag.StringVar(&config.ListenSubnet, "listen", "127.0.0.1/24", "Network subnet for Art-Net comms")
 	pflag.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
 
 	pflag.Parse()

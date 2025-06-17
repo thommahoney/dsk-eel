@@ -7,7 +7,7 @@ const (
 	Greater = Direction(iota)
 
 	// Lesser direction means that indexes are decreasing
-	Lesser  = Direction(iota)
+	Lesser = Direction(iota)
 )
 
 type Eel struct {
@@ -30,14 +30,14 @@ type Food struct {
 // therefore may travel in a different direction after a junction
 // eg. B1 -> G9 is a transition from Greater to Lesser direction travel
 type Hop struct {
-	Point *Point
+	Point     *Point
 	Direction Direction
 }
 
 // Represents a physical dome pipe segment and the lights on it
 type Segment struct {
-	Label        string
-	Length       int
+	Label  string
+	Length int
 
 	// [Greater|Lesser][Up|Down|Left|Right] hops
 	// are akin to traversing a graph or a tree structure
@@ -58,7 +58,7 @@ type Segment struct {
 
 // Represents a specific LED on a Segment
 type Point struct {
-	Segment  *Segment
+	Segment *Segment
 
 	// LED closest to the ground cable is Position 0
 	// LED furthest from the ground cable is Position (Segment.Length - 1)
