@@ -6,16 +6,18 @@ import (
 	"strings"
 
 	"github.com/sstallion/go-hid"
+	"github.com/thommahoney/dsk-eel/config"
 )
 
 type Controller struct {
-	device *hid.Device
-	data   []byte
-	logger *slog.Logger
+	data       []byte
+	device     *hid.Device
+	devicePath string
+	logger     *slog.Logger
 
-	Joystick *Joystick
 	Buttons  *Buttons
 	Handler  func(ControllerState)
+	Joystick *Joystick
 }
 
 type ControllerState struct {
@@ -108,11 +110,12 @@ func (bs ButtonStatus) String() string {
 	return s
 }
 
-func NewController(logger *slog.Logger, handleFunc func(ControllerState)) (*Controller, error) {
+func NewController(config *config.Config, handleFunc func(ControllerState)) (*Controller, error) {
 	c := &Controller{
-		data:    make([]byte, 8),
-		logger:  logger,
-		Handler: handleFunc,
+		Handler:    handleFunc,
+		data:       make([]byte, 8),
+		devicePath: config.ControllerPath,
+		logger:     config.Logger,
 	}
 
 	if err := c.Init(); err != nil {
@@ -129,8 +132,8 @@ func NewController(logger *slog.Logger, handleFunc func(ControllerState)) (*Cont
 	}
 	c.logger.Info("connected to joystick", "manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
 
-	c.Joystick = NewJoystick(logger)
-	c.Buttons = NewButtons(logger)
+	c.Joystick = NewJoystick(config.Logger)
+	c.Buttons = NewButtons(config.Logger)
 
 	return c, nil
 }
@@ -140,7 +143,7 @@ func (c *Controller) Init() error {
 		return err
 	}
 
-	d, err := hid.OpenPath("/dev/hidraw3")
+	d, err := hid.OpenPath(c.devicePath)
 	if err != nil {
 		return err
 	}

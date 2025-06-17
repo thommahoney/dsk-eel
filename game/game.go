@@ -27,7 +27,7 @@ func NewGame(config *config.Config) *Game {
 	game.Init()
 
 	if !game.Config.NoJoy {
-		c, err := controller.NewController(config.Logger, game.HandleControllerState)
+		c, err := controller.NewController(config, game.HandleControllerState)
 		if err != nil {
 			log.Fatal(err)
 		}
