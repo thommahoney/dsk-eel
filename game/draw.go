@@ -27,7 +27,6 @@ func (g *Game) Draw() {
 
 	dst := fmt.Sprintf("%s:%d", g.Config.ArtNetDest, packet.ArtNetPort)
 	node, _ := net.ResolveUDPAddr("udp", dst)
-	// lie about source
 	src := fmt.Sprintf("%s:%d", ip, packet.ArtNetPort)
 	localAddr, _ := net.ResolveUDPAddr("udp", src)
 
