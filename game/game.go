@@ -15,12 +15,13 @@ type Game struct {
 	Config       *config.Config
 	Controller   *controller.Controller
 	PrimaryColor [3]byte
-	Segments     []Segment
+	Segments     [49]Segment
 }
 
 func NewGame(config *config.Config) *Game {
 	game := &Game{
-		Config: config,
+		Config:       config,
+		PrimaryColor: RandomColor(),
 	}
 
 	game.Init()
@@ -49,26 +50,30 @@ func (g *Game) Run() {
 	wg.Wait()
 }
 
-var yellow [3]byte = [...]byte{0xff, 0xff, 0x00} // #FFFF00
-var blue [3]byte = [...]byte{0x00, 0x00, 0xff}   // #0000FF
-var red [3]byte = [...]byte{0xff, 0x00, 0x00}    // #FF0000
-var black [3]byte = [...]byte{0x00, 0x00, 0x00}  // #000000
-var white [3]byte = [...]byte{0xff, 0xff, 0xff}  // #ffffff
+var Yellow [3]byte = [...]byte{0xff, 0xff, 0x00} // #FFFF00
+var Blue [3]byte = [...]byte{0x00, 0x00, 0xff}   // #0000FF
+var Red [3]byte = [...]byte{0xff, 0x00, 0x00}    // #FF0000
+var Black [3]byte = [...]byte{0x00, 0x00, 0x00}  // #000000
+var White [3]byte = [...]byte{0xff, 0xff, 0xff}  // #ffffff
 
 func (g *Game) HandleControllerState(state controller.ControllerState) {
 	fmt.Println("joystick:", state.Direction, "buttons:", state.ButtonStatus)
 	switch state.ButtonStatus {
 	case controller.Btn_White:
-		g.PrimaryColor = white
+		g.PrimaryColor = White
 	case controller.Btn_Red:
-		g.PrimaryColor = red
+		g.PrimaryColor = Red
 	case controller.Btn_Yellow:
-		g.PrimaryColor = yellow
+		g.PrimaryColor = Yellow
 	case controller.Btn_Blue:
-		g.PrimaryColor = blue
+		g.PrimaryColor = Blue
 	case controller.Btn_None:
-		g.PrimaryColor = black
+		// No-Op
 	default:
-		g.PrimaryColor = [3]byte{byte(rand.IntN(255)), byte(rand.IntN(255)), byte(rand.IntN(255))}
+		g.PrimaryColor = RandomColor()
 	}
+}
+
+func RandomColor() [3]byte {
+	return [3]byte{byte(rand.IntN(255)), byte(rand.IntN(255)), byte(rand.IntN(255))}
 }

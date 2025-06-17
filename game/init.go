@@ -6,7 +6,7 @@ const (
 
 // Ridiculously long function for initializing the Game
 func (g *Game) Init() {
-	segments := make([]Segment, 49)
+	segments := [49]Segment{}
 
 	// blue - loop 3
 	b1 := NewSegment("b1")

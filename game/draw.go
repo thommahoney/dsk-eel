@@ -38,7 +38,7 @@ func (g *Game) Draw() {
 	}
 
 	var sequence uint8 = 0
-	prevColor := g.PrimaryColor
+	prevColor := Black
 
 	for {
 		color := g.PrimaryColor
