@@ -1,7 +1,6 @@
 package game
 
 import (
-	"fmt"
 	"log"
 	"math/rand/v2"
 	"sync"
@@ -57,7 +56,7 @@ var Black [3]byte = [...]byte{0x00, 0x00, 0x00}  // #000000
 var White [3]byte = [...]byte{0xff, 0xff, 0xff}  // #ffffff
 
 func (g *Game) HandleControllerState(state controller.ControllerState) {
-	fmt.Println("joystick:", state.Direction, "buttons:", state.ButtonStatus)
+	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
 	switch state.ButtonStatus {
 	case controller.Btn_White:
 		g.PrimaryColor = White
