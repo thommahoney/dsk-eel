@@ -132,8 +132,6 @@ func NewController(config *config.Config, handleFunc func(ControllerState)) (*Co
 	}
 	c.logger.Info("connected to joystick", "manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
 
-	c.Joystick = NewJoystick(config.Logger)
-	c.Buttons = NewButtons(config.Logger)
 
 	return c, nil
 }
@@ -149,6 +147,9 @@ func (c *Controller) Init() error {
 	}
 
 	c.device = d
+
+	c.Joystick = NewJoystick(c.logger)
+	c.Buttons = NewButtons(c.logger)
 
 	go func() {
 		prevDirection := Dir_Neutral
