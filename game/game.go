@@ -9,11 +9,19 @@ import (
 	"github.com/thommahoney/dsk-eel/controller"
 )
 
+type Color [3]byte
+
+var Yellow = Color{0xff, 0xff, 0x00} // #FFFF00
+var Blue = Color{0x00, 0x00, 0xff}   // #0000FF
+var Red = Color{0xff, 0x00, 0x00}    // #FF0000
+var Black = Color{0x00, 0x00, 0x00}  // #000000
+var White = Color{0xff, 0xff, 0xff}  // #ffffff
+
 // Tracks game state
 type Game struct {
 	Config       *config.Config
 	Controller   *controller.Controller
-	PrimaryColor [3]byte
+	PrimaryColor Color
 	Segments     [49]Segment
 }
 
@@ -44,19 +52,23 @@ func (g *Game) Run() {
 
 	wg.Add(1)
 
-	g.Draw()
+	go g.Draw(&wg)
 
 	wg.Wait()
 }
 
-var Yellow [3]byte = [...]byte{0xff, 0xff, 0x00} // #FFFF00
-var Blue [3]byte = [...]byte{0x00, 0x00, 0xff}   // #0000FF
-var Red [3]byte = [...]byte{0xff, 0x00, 0x00}    // #FF0000
-var Black [3]byte = [...]byte{0x00, 0x00, 0x00}  // #000000
-var White [3]byte = [...]byte{0xff, 0xff, 0xff}  // #ffffff
-
 func (g *Game) HandleControllerState(state controller.ControllerState) {
 	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
+
+	// special case for all buttons held (black is drawn as a rainbow)
+	if state.ButtonStatus&controller.Btn_White > 0 &&
+		state.ButtonStatus&controller.Btn_Red > 0 &&
+		state.ButtonStatus&controller.Btn_Yellow > 0 &&
+		state.ButtonStatus&controller.Btn_Blue > 0 {
+		g.PrimaryColor = Black
+		return
+	}
+
 	switch state.ButtonStatus {
 	case controller.Btn_White:
 		g.PrimaryColor = White
@@ -73,6 +85,6 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 	}
 }
 
-func RandomColor() [3]byte {
-	return [3]byte{byte(rand.IntN(255)), byte(rand.IntN(255)), byte(rand.IntN(255))}
+func RandomColor() Color {
+	return Color{byte(rand.IntN(255)), byte(rand.IntN(255)), byte(rand.IntN(255))}
 }

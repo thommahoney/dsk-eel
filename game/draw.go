@@ -2,13 +2,17 @@ package game
 
 import (
 	"fmt"
+	"math"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/jsimonetti/go-artnet/packet"
 )
 
-func (g *Game) Draw() {
+const pixelCount = 170
+
+func (g *Game) Draw(wg *sync.WaitGroup) {
 	_, cidrnet, _ := net.ParseCIDR(g.Config.ListenSubnet)
 
 	addrs, err := net.InterfaceAddrs()
@@ -37,7 +41,7 @@ func (g *Game) Draw() {
 	}
 
 	var sequence uint8 = 0
-	prevColor := Black
+	prevColor := RandomColor()
 
 	for {
 		color := g.PrimaryColor
@@ -46,12 +50,20 @@ func (g *Game) Draw() {
 			continue
 		}
 		prevColor = color
-		c_idx := 0
 
-		var data = [512]byte{}
-		for i := 0; i < 510; i++ {
-			data[i] = color[c_idx]
-			c_idx = (c_idx + 1) % 3
+		data := [512]byte{}
+		for i := 0; i < pixelCount; i++ {
+			if color == Black {
+				hue := float64(i) * 360.0 / float64(pixelCount)
+				c := hsvToRGB(hue, 1.0, 1.0)
+				data[i*3+0] = c[0]
+				data[i*3+1] = c[1]
+				data[i*3+2] = c[2]
+			} else {
+				data[i*3+0] = color[0]
+				data[i*3+1] = color[1]
+				data[i*3+2] = color[2]
+			}
 		}
 
 		p := &packet.ArtDMXPacket{
@@ -129,5 +141,37 @@ func (g *Game) Draw() {
 
 		b, _ = p.MarshalBinary()
 		_, _ = conn.WriteTo(b, node)
+	}
+
+	wg.Done()
+}
+
+// hsvToRGB converts hue (0-360), saturation (0-1), value (0-1) to RGB (0-255).
+func hsvToRGB(h, s, v float64) Color {
+	c := v * s
+	x := c * (1 - math.Abs(math.Mod(h/60, 2)-1))
+	m := v - c
+
+	var rf, gf, bf float64
+
+	switch {
+	case h < 60:
+		rf, gf, bf = c, x, 0
+	case h < 120:
+		rf, gf, bf = x, c, 0
+	case h < 180:
+		rf, gf, bf = 0, c, x
+	case h < 240:
+		rf, gf, bf = 0, x, c
+	case h < 300:
+		rf, gf, bf = x, 0, c
+	default:
+		rf, gf, bf = c, 0, x
+	}
+
+	return Color{
+		byte((rf + m) * 255),
+		byte((gf + m) * 255),
+		byte((bf + m) * 255),
 	}
 }
