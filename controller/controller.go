@@ -9,6 +9,10 @@ import (
 	"github.com/thommahoney/dsk-eel/config"
 )
 
+type InputDevice interface {
+	SetHandleFunc(handleFunc func(ControllerState)) ()
+}
+
 type Controller struct {
 	data       []byte
 	device     *hid.Device
@@ -110,9 +114,8 @@ func (bs ButtonStatus) String() string {
 	return s
 }
 
-func NewController(config *config.Config, handleFunc func(ControllerState)) (*Controller, error) {
+func NewController(config *config.Config) (*Controller, error) {
 	c := &Controller{
-		Handler:    handleFunc,
 		data:       make([]byte, 8),
 		devicePath: config.ControllerPath,
 		logger:     config.Logger,
@@ -134,6 +137,10 @@ func NewController(config *config.Config, handleFunc func(ControllerState)) (*Co
 
 
 	return c, nil
+}
+
+func (c *Controller) SetHandleFunc(handleFunc func(ControllerState)) {
+	c.Handler = handleFunc
 }
 
 func (c *Controller) Init() error {

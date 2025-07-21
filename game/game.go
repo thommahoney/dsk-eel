@@ -20,7 +20,7 @@ var White = Color{0xff, 0xff, 0xff}  // #ffffff
 // Tracks game state
 type Game struct {
 	Config       *config.Config
-	Controller   *controller.Controller
+	InputDevice  controller.InputDevice
 	PrimaryColor Color
 	Segments     [49]Segment
 }
@@ -33,14 +33,21 @@ func NewGame(config *config.Config) *Game {
 
 	game.Init()
 
-	if !game.Config.NoJoy {
-		c, err := controller.NewController(config, game.HandleControllerState)
+	if game.Config.NoJoy {
+		k, err := controller.NewKeyboard(config)
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		game.Controller = c
+		game.InputDevice = k
+	} else {
+		c, err := controller.NewController(config)
+		if err != nil {
+			log.Fatal(err)
+		}
+		game.InputDevice = c
 	}
+
+	game.InputDevice.SetHandleFunc(game.HandleControllerState)
 
 	return game
 }
