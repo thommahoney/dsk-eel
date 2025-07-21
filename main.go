@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -23,7 +24,10 @@ func main() {
 
 	config.Logger = NewLogger(config.Verbosity)
 
-	game := game.NewGame(&config)
+	game, err := game.NewGame(&config)
+	if err != nil {
+		log.Fatalf("NewGame failure: %s", err)
+	}
 
 	for {
 		game.Run()

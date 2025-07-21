@@ -1,7 +1,7 @@
 package game
 
 import (
-	"log"
+	"fmt"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -24,32 +24,36 @@ var White = Color{0xff, 0xff, 0xff}  // #ffffff
 
 // Tracks game state
 type Game struct {
+	Chromatik    *Chromatik
 	Config       *config.Config
 	Controller   *controller.Controller
 	Eel          *Eel
 	PrimaryColor Color
-	Segments     [49]Segment
 	QuitChan     chan struct{}
+	Segments     [49]Segment
 }
 
-func NewGame(config *config.Config) *Game {
+func NewGame(config *config.Config) (*Game, error) {
 	game := &Game{
 		Config:       config,
 		PrimaryColor: RandomColor(),
 	}
 
-	game.Init()
+	err := game.Init()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize: %s", err)
+	}
 
 	if !game.Config.NoJoy {
 		c, err := controller.NewController(config, game.HandleControllerState)
 		if err != nil {
-			log.Fatal(err)
+			return nil, fmt.Errorf("error in NewController: %s", err)
 		}
 
 		game.Controller = c
 	}
 
-	return game
+	return game, nil
 }
 
 func (g *Game) Run() {

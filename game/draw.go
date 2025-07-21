@@ -1,9 +1,7 @@
 package game
 
 import (
-	"fmt"
 	"math"
-	"net"
 	"sync"
 	"time"
 
@@ -14,33 +12,6 @@ const pixelCount = 170
 
 func (g *Game) Draw(wg *sync.WaitGroup, quit <-chan struct{}) {
 	defer wg.Done()
-
-	_, cidrnet, _ := net.ParseCIDR(g.Config.ListenSubnet)
-
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		fmt.Printf("error getting ips: %s\n", err)
-	}
-
-	var ip net.IP
-
-	for _, addr := range addrs {
-		ip = addr.(*net.IPNet).IP
-		if cidrnet.Contains(ip) {
-			break
-		}
-	}
-
-	dst := fmt.Sprintf("%s:%d", g.Config.ArtNetDest, packet.ArtNetPort)
-	node, _ := net.ResolveUDPAddr("udp", dst)
-	src := fmt.Sprintf("%s:%d", ip, packet.ArtNetPort)
-	localAddr, _ := net.ResolveUDPAddr("udp", src)
-
-	conn, err := net.ListenUDP("udp", localAddr)
-	if err != nil {
-		fmt.Printf("error opening udp: %s\n", err)
-		return
-	}
 
 	var sequence uint8 = 0
 	prevColor := RandomColor()
@@ -73,81 +44,18 @@ func (g *Game) Draw(wg *sync.WaitGroup, quit <-chan struct{}) {
 				}
 			}
 
-			p := &packet.ArtDMXPacket{
-				Sequence: sequence,
-				SubUni:   0,
-				Net:      0,
-				Data:     data,
+			for univ := uint8(0); univ < 7; univ++ {
+				sequence++
+				p := &packet.ArtDMXPacket{
+					Sequence: sequence,
+					SubUni:   univ,
+					Net:      0,
+					Data:     data,
+				}
+
+				b, _ := p.MarshalBinary()
+				_, _ = g.Chromatik.Send(b)
 			}
-
-			b, _ := p.MarshalBinary()
-			_, _ = conn.WriteTo(b, node)
-
-			sequence++
-			p = &packet.ArtDMXPacket{
-				Sequence: sequence,
-				SubUni:   1,
-				Net:      0,
-				Data:     data,
-			}
-
-			b, _ = p.MarshalBinary()
-			_, _ = conn.WriteTo(b, node)
-
-			sequence++
-			p = &packet.ArtDMXPacket{
-				Sequence: sequence,
-				SubUni:   2,
-				Net:      0,
-				Data:     data,
-			}
-
-			b, _ = p.MarshalBinary()
-			_, _ = conn.WriteTo(b, node)
-
-			sequence++
-			p = &packet.ArtDMXPacket{
-				Sequence: sequence,
-				SubUni:   3,
-				Net:      0,
-				Data:     data,
-			}
-
-			b, _ = p.MarshalBinary()
-			_, _ = conn.WriteTo(b, node)
-
-			sequence++
-			p = &packet.ArtDMXPacket{
-				Sequence: sequence,
-				SubUni:   4,
-				Net:      0,
-				Data:     data,
-			}
-
-			b, _ = p.MarshalBinary()
-			_, _ = conn.WriteTo(b, node)
-
-			sequence++
-			p = &packet.ArtDMXPacket{
-				Sequence: sequence,
-				SubUni:   5,
-				Net:      0,
-				Data:     data,
-			}
-
-			b, _ = p.MarshalBinary()
-			_, _ = conn.WriteTo(b, node)
-
-			sequence++
-			p = &packet.ArtDMXPacket{
-				Sequence: sequence,
-				SubUni:   6,
-				Net:      0,
-				Data:     data,
-			}
-
-			b, _ = p.MarshalBinary()
-			_, _ = conn.WriteTo(b, node)
 		}
 	}
 }

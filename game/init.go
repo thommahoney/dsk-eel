@@ -1,11 +1,67 @@
 package game
 
+import (
+	"fmt"
+	"net"
+
+	"github.com/jsimonetti/go-artnet/packet"
+	"github.com/thommahoney/dsk-eel/config"
+)
+
 const (
 	SegmentLength = 22
 )
 
 // Ridiculously long function for initializing the Game
-func (g *Game) Init() {
+func (g *Game) Init() error {
+	chromatik, err := InitChromatik(g.Config)
+	if err != nil {
+		return err
+	}
+	g.Chromatik = chromatik
+
+	g.Segments = InitSegments()
+
+	return nil
+}
+
+func InitChromatik(c *config.Config) (*Chromatik, error) {
+	_, cidrnet, _ := net.ParseCIDR(c.ListenSubnet)
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		fmt.Printf("error getting ips: %s\n", err)
+	}
+
+	var ip net.IP
+
+	for _, addr := range addrs {
+		ip = addr.(*net.IPNet).IP
+		if cidrnet.Contains(ip) {
+			break
+		}
+	}
+
+	dst := fmt.Sprintf("%s:%d", c.ArtNetDest, packet.ArtNetPort)
+	node, err := net.ResolveUDPAddr("udp", dst)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving udp dst: %s", err)
+	}
+	src := fmt.Sprintf("%s:%d", ip, packet.ArtNetPort)
+	localAddr, err := net.ResolveUDPAddr("udp", src)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving udp src: %s", err)
+	}
+
+	conn, err := net.ListenUDP("udp", localAddr)
+	if err != nil {
+		return nil, fmt.Errorf("error opening udp: %s", err)
+	}
+
+	return &Chromatik{Connection: conn, Node: node}, nil
+}
+
+func InitSegments() [49]Segment {
 	segments := [49]Segment{}
 
 	// blue - loop 3
@@ -660,7 +716,7 @@ func (g *Game) Init() {
 	g10.LesserLeft = &g8End
 	g10.LesserRight = &g9Start
 
-	g.Segments = segments
+	return segments
 }
 
 func NewSegment(label string) Segment {
