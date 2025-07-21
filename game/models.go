@@ -1,5 +1,11 @@
 package game
 
+import (
+	"fmt"
+
+	"github.com/thommahoney/dsk-eel/controller"
+)
+
 type Direction int
 
 const (
@@ -8,13 +14,85 @@ const (
 
 	// Lesser direction means that indexes are decreasing
 	Lesser = Direction(iota)
+
+	// Initial length of Eel, length of food
+	GrowthIncrement = 7
 )
 
 type Eel struct {
-	Head      *Point
-	Tail      *Point
-	Length    int
-	Direction Direction
+	Body       []*Point
+	ControlDir controller.Direction
+	Game       *Game
+	Growth     int
+	TravelDir  Direction
+}
+
+func NewEel(g *Game) *Eel {
+	// @todo randomize starting point
+	startingSegment := g.Segments[0]
+	body := []*Point{}
+	for i := GrowthIncrement - 1; i >= 0; i-- {
+		body = append(body, &Point{Segment: &startingSegment, Position: i})
+	}
+
+	return &Eel{
+		Body:       body,
+		ControlDir: controller.Dir_Neutral,
+		Game:       g,
+		TravelDir:  Greater,
+	}
+}
+
+func (e *Eel) Length() int {
+	return len(e.Body)
+}
+
+func (e *Eel) Head() *Point {
+	return e.Body[0]
+}
+
+func (e *Eel) Tail() *Point {
+	return e.Body[e.Length()-1]
+}
+
+func (e *Eel) Eat() {
+	e.Growth += GrowthIncrement
+	// @todo trigger sound!
+}
+
+func (e *Eel) Move() error {
+	head := e.Head()
+	travelDir := e.TravelDir
+
+	var nextPoint *Point
+
+	if (head.Position == 0 && travelDir == Lesser) ||
+		(head.Position == SegmentLength-1 && travelDir == Greater) {
+		nextHop := head.Segment.NextHop(travelDir, e.ControlDir)
+
+		if nextHop == nil {
+			return fmt.Errorf("no next hop")
+		}
+
+		nextPoint = nextHop.Point
+		e.TravelDir = nextHop.Direction
+	} else {
+		nextPoint = head
+		if e.TravelDir == Greater {
+			nextPoint.Position++
+		} else {
+			nextPoint.Position--
+		}
+	}
+
+	if e.Growth > 0 {
+		e.Body = append([]*Point{nextPoint}, e.Body...)
+		e.Growth--
+	} else {
+		e.Body = append([]*Point{nextPoint}, e.Body[0:e.Length()-1]...)
+	}
+
+	return nil
 }
 
 // Represents the Food that the Eel encounters on its journey
@@ -54,6 +132,41 @@ type Segment struct {
 	LesserDown   *Hop
 	LesserLeft   *Hop
 	LesserRight  *Hop
+}
+
+// NextHop returns the correct next Hop for the Eel to follow
+//
+// This function should only be called when the head of the eel meets a vertex.
+// If NextHop returns nil it means either there's a bug in the program or the
+// game is over due to incorrect controller direction
+func (s *Segment) NextHop(tDir Direction, cDir controller.Direction) *Hop {
+	// @todo: handle NorthEast, SouthEast, SouthWest, NorthWest directions
+	switch tDir {
+	case Greater:
+		switch cDir {
+		case controller.Dir_North:
+			return s.GreaterUp
+		case controller.Dir_South:
+			return s.GreaterDown
+		case controller.Dir_East:
+			return s.GreaterRight
+		case controller.Dir_West:
+			return s.GreaterLeft
+		}
+	case Lesser:
+		switch cDir {
+		case controller.Dir_North:
+			return s.LesserUp
+		case controller.Dir_South:
+			return s.LesserDown
+		case controller.Dir_East:
+			return s.LesserRight
+		case controller.Dir_West:
+			return s.LesserLeft
+		}
+	}
+
+	return nil
 }
 
 // Represents a specific LED on a Segment

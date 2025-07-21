@@ -12,7 +12,9 @@ import (
 
 const pixelCount = 170
 
-func (g *Game) Draw(wg *sync.WaitGroup) {
+func (g *Game) Draw(wg *sync.WaitGroup, quit <-chan struct{}) {
+	defer wg.Done()
+
 	_, cidrnet, _ := net.ParseCIDR(g.Config.ListenSubnet)
 
 	addrs, err := net.InterfaceAddrs()
@@ -44,106 +46,110 @@ func (g *Game) Draw(wg *sync.WaitGroup) {
 	prevColor := RandomColor()
 
 	for {
-		color := g.PrimaryColor
-		if prevColor == color {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		prevColor = color
-
-		data := [512]byte{}
-		for i := 0; i < pixelCount; i++ {
-			if color == Black {
-				hue := float64(i) * 360.0 / float64(pixelCount)
-				c := hsvToRGB(hue, 1.0, 1.0)
-				data[i*3+0] = c[0]
-				data[i*3+1] = c[1]
-				data[i*3+2] = c[2]
-			} else {
-				data[i*3+0] = color[0]
-				data[i*3+1] = color[1]
-				data[i*3+2] = color[2]
+		select {
+		case <-quit:
+			g.Config.Logger.Info("Draw received quit")
+			return
+		default:
+			color := g.PrimaryColor
+			if prevColor == color {
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
+			prevColor = color
+
+			data := [512]byte{}
+			for i := 0; i < pixelCount; i++ {
+				if color == Black {
+					hue := float64(i) * 360.0 / float64(pixelCount)
+					c := hsvToRGB(hue, 1.0, 1.0)
+					data[i*3+0] = c[0]
+					data[i*3+1] = c[1]
+					data[i*3+2] = c[2]
+				} else {
+					data[i*3+0] = color[0]
+					data[i*3+1] = color[1]
+					data[i*3+2] = color[2]
+				}
+			}
+
+			p := &packet.ArtDMXPacket{
+				Sequence: sequence,
+				SubUni:   0,
+				Net:      0,
+				Data:     data,
+			}
+
+			b, _ := p.MarshalBinary()
+			_, _ = conn.WriteTo(b, node)
+
+			sequence++
+			p = &packet.ArtDMXPacket{
+				Sequence: sequence,
+				SubUni:   1,
+				Net:      0,
+				Data:     data,
+			}
+
+			b, _ = p.MarshalBinary()
+			_, _ = conn.WriteTo(b, node)
+
+			sequence++
+			p = &packet.ArtDMXPacket{
+				Sequence: sequence,
+				SubUni:   2,
+				Net:      0,
+				Data:     data,
+			}
+
+			b, _ = p.MarshalBinary()
+			_, _ = conn.WriteTo(b, node)
+
+			sequence++
+			p = &packet.ArtDMXPacket{
+				Sequence: sequence,
+				SubUni:   3,
+				Net:      0,
+				Data:     data,
+			}
+
+			b, _ = p.MarshalBinary()
+			_, _ = conn.WriteTo(b, node)
+
+			sequence++
+			p = &packet.ArtDMXPacket{
+				Sequence: sequence,
+				SubUni:   4,
+				Net:      0,
+				Data:     data,
+			}
+
+			b, _ = p.MarshalBinary()
+			_, _ = conn.WriteTo(b, node)
+
+			sequence++
+			p = &packet.ArtDMXPacket{
+				Sequence: sequence,
+				SubUni:   5,
+				Net:      0,
+				Data:     data,
+			}
+
+			b, _ = p.MarshalBinary()
+			_, _ = conn.WriteTo(b, node)
+
+			sequence++
+			p = &packet.ArtDMXPacket{
+				Sequence: sequence,
+				SubUni:   6,
+				Net:      0,
+				Data:     data,
+			}
+
+			b, _ = p.MarshalBinary()
+			_, _ = conn.WriteTo(b, node)
 		}
-
-		p := &packet.ArtDMXPacket{
-			Sequence: sequence,
-			SubUni:   0,
-			Net:      0,
-			Data:     data,
-		}
-
-		b, _ := p.MarshalBinary()
-		_, _ = conn.WriteTo(b, node)
-
-		sequence++
-		p = &packet.ArtDMXPacket{
-			Sequence: sequence,
-			SubUni:   1,
-			Net:      0,
-			Data:     data,
-		}
-
-		b, _ = p.MarshalBinary()
-		_, _ = conn.WriteTo(b, node)
-
-		sequence++
-		p = &packet.ArtDMXPacket{
-			Sequence: sequence,
-			SubUni:   2,
-			Net:      0,
-			Data:     data,
-		}
-
-		b, _ = p.MarshalBinary()
-		_, _ = conn.WriteTo(b, node)
-
-		sequence++
-		p = &packet.ArtDMXPacket{
-			Sequence: sequence,
-			SubUni:   3,
-			Net:      0,
-			Data:     data,
-		}
-
-		b, _ = p.MarshalBinary()
-		_, _ = conn.WriteTo(b, node)
-
-		sequence++
-		p = &packet.ArtDMXPacket{
-			Sequence: sequence,
-			SubUni:   4,
-			Net:      0,
-			Data:     data,
-		}
-
-		b, _ = p.MarshalBinary()
-		_, _ = conn.WriteTo(b, node)
-
-		sequence++
-		p = &packet.ArtDMXPacket{
-			Sequence: sequence,
-			SubUni:   5,
-			Net:      0,
-			Data:     data,
-		}
-
-		b, _ = p.MarshalBinary()
-		_, _ = conn.WriteTo(b, node)
-
-		sequence++
-		p = &packet.ArtDMXPacket{
-			Sequence: sequence,
-			SubUni:   6,
-			Net:      0,
-			Data:     data,
-		}
-
-		b, _ = p.MarshalBinary()
-		_, _ = conn.WriteTo(b, node)
 	}
-
-	wg.Done()
 }
 
 // hsvToRGB converts hue (0-360), saturation (0-1), value (0-1) to RGB (0-255).

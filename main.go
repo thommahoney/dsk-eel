@@ -24,7 +24,10 @@ func main() {
 	config.Logger = NewLogger(config.Verbosity)
 
 	game := game.NewGame(&config)
-	game.Run()
+
+	for {
+		game.Run()
+	}
 }
 
 func NewLogger(verbosity int) *slog.Logger {
