@@ -91,6 +91,7 @@ func (g *Game) Mover(wg *sync.WaitGroup, quit <-chan struct{}) {
 			if err != nil {
 				g.Config.Logger.Info("Mover sent game over")
 				g.GameOver()
+				return
 			}
 
 		case <-quit:
