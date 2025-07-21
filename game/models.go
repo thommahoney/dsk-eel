@@ -95,6 +95,16 @@ func (e *Eel) Move() error {
 	return nil
 }
 
+func (e *Eel) BodyPixels() map[int]bool {
+	pixels := map[int]bool{}
+
+	for _, point := range(e.Body) {
+		pixels[point.Segment.Offset + point.Position] = true
+	}
+
+	return pixels
+}
+
 // Represents the Food that the Eel encounters on its journey
 // When the Eel encounters Food, its length is increased
 type Food struct {
@@ -116,6 +126,7 @@ type Hop struct {
 type Segment struct {
 	Label  string
 	Length int
+	Offset int
 
 	// [Greater|Lesser][Up|Down|Left|Right] hops
 	// are akin to traversing a graph or a tree structure
