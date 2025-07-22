@@ -32,7 +32,7 @@ func NewEel(g *Game) *Eel {
 	startingSegment := g.Segments[0]
 	body := []*Point{}
 	for i := GrowthIncrement - 1; i >= 0; i-- {
-		body = append(body, &Point{Segment: &startingSegment, Position: i})
+		body = append(body, &Point{Segment: startingSegment, Position: i})
 	}
 
 	return &Eel{
@@ -77,7 +77,8 @@ func (e *Eel) Move() error {
 		nextPoint = nextHop.Point
 		e.TravelDir = nextHop.Direction
 	} else {
-		nextPoint = head
+		p := *head
+		nextPoint = &p
 		if e.TravelDir == Greater {
 			nextPoint.Position++
 		} else {
@@ -91,6 +92,8 @@ func (e *Eel) Move() error {
 	} else {
 		e.Body = append([]*Point{nextPoint}, e.Body[0:e.Length()-1]...)
 	}
+
+	e.Game.Draw()
 
 	return nil
 }

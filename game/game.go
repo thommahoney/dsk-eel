@@ -30,7 +30,7 @@ type Game struct {
 	Eel          *Eel
 	PrimaryColor Color
 	QuitChan     chan struct{}
-	Segments     [49]Segment
+	Segments     [49]*Segment
 }
 
 func NewGame(config *config.Config) (*Game, error) {
@@ -64,8 +64,8 @@ func (g *Game) Run() {
 	var wg sync.WaitGroup
 	g.QuitChan = make(chan struct{})
 
-	wg.Add(1)
-	go g.Draw(&wg, g.QuitChan)
+	// wg.Add(1)
+	// go g.Draw(&wg, g.QuitChan)
 
 	wg.Add(1)
 	go g.Mover(&wg, g.QuitChan)
@@ -89,7 +89,7 @@ func (g *Game) Mover(wg *sync.WaitGroup, quit <-chan struct{}) {
 		case <-ticker.C:
 			err := g.Eel.Move()
 			if err != nil {
-				g.Config.Logger.Info("Mover sent game over")
+				g.Config.Logger.Info("Mover sent game over", "err", err)
 				g.GameOver()
 				return
 			}
