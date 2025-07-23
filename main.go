@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -13,6 +14,7 @@ import (
 func main() {
 	config := config.Config{}
 
+	pflag.BoolVar(&config.DemoMode, "demo", false, "Randomly move eel")
 	pflag.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
 	pflag.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
 	pflag.IPVar(&config.ArtNetDest, "chromatik", net.IP("127.0.0.1"), "IP address of Chromatik")
@@ -23,8 +25,14 @@ func main() {
 
 	config.Logger = NewLogger(config.Verbosity)
 
-	game := game.NewGame(&config)
-	game.Run()
+	game, err := game.NewGame(&config)
+	if err != nil {
+		log.Fatalf("NewGame failure: %s", err)
+	}
+
+	for {
+		game.Run()
+	}
 }
 
 func NewLogger(verbosity int) *slog.Logger {
