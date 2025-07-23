@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	MovementFrequency = 50 * time.Millisecond
+	MovementFrequency = 25 * time.Millisecond
 )
 
 type Color [3]byte
