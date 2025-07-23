@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	MovementFrequency = 200 * time.Millisecond
+	MovementFrequency = 100 * time.Millisecond
 )
 
 type Color [3]byte
@@ -21,6 +21,8 @@ var Blue = Color{0x00, 0x00, 0xff}   // #0000FF
 var Red = Color{0xff, 0x00, 0x00}    // #FF0000
 var Black = Color{0x00, 0x00, 0x00}  // #000000
 var White = Color{0xff, 0xff, 0xff}  // #ffffff
+var Purple = Color{0xae, 0x00, 0xff} // #ae00ff
+var Green = Color{0x00, 0xff, 0x00}  // #00ff00
 
 // Tracks game state
 type Game struct {

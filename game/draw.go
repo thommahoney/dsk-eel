@@ -26,10 +26,10 @@ func (g *Game) Draw() {
 			eelBody := g.Eel.BodyPixels()	
 			pixels := make([]Color, len(g.Segments) * SegmentLength)
 			for i := 0; i < len(pixels); i++ {
-				if eelBody[i] {
-					pixels[i] = Red
+				if c, key := eelBody[i]; key {
+					pixels[i] = c
 				} else {
-					pixels[i] = Black
+					pixels[i] = Color{0x69, 0x69, 0x69}
 				}
 			}
 

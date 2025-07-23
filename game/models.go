@@ -98,11 +98,11 @@ func (e *Eel) Move() error {
 	return nil
 }
 
-func (e *Eel) BodyPixels() map[int]bool {
-	pixels := map[int]bool{}
+func (e *Eel) BodyPixels() map[int]Color {
+	pixels := map[int]Color{}
 
 	for _, point := range(e.Body) {
-		pixels[point.Segment.Offset + point.Position] = true
+		pixels[point.Segment.Offset + point.Position] = point.Segment.Color
 	}
 
 	return pixels
@@ -130,6 +130,8 @@ type Segment struct {
 	Label  string
 	Length int
 	Offset int
+
+	Color Color
 
 	// [Greater|Lesser][Up|Down|Left|Right] hops
 	// are akin to traversing a graph or a tree structure
