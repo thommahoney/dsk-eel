@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math/rand/v2"
 
 	"github.com/thommahoney/dsk-eel/controller"
 )
@@ -68,7 +69,23 @@ func (e *Eel) Move() error {
 
 	if (head.Position == 0 && travelDir == Lesser) ||
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
-		nextHop := head.Segment.NextHop(travelDir, e.ControlDir)
+
+		var cDir controller.Direction
+		if e.Game.Config.DemoMode {
+			switch rand.N(4) {
+			case 0:
+				cDir = controller.Dir_North
+			case 1:
+				cDir = controller.Dir_South
+			case 2:
+				cDir = controller.Dir_East
+			case 3:
+				cDir = controller.Dir_West
+			}
+		} else {
+			cDir = e.ControlDir
+		}
+		nextHop := head.Segment.NextHop(travelDir, cDir)
 
 		if nextHop == nil {
 			return fmt.Errorf("no next hop")

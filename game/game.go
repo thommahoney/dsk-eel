@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	MovementFrequency = 100 * time.Millisecond
+	MovementFrequency = 50 * time.Millisecond
 )
 
 type Color [3]byte
@@ -65,9 +65,6 @@ func (g *Game) Run() {
 
 	var wg sync.WaitGroup
 	g.QuitChan = make(chan struct{})
-
-	// wg.Add(1)
-	// go g.Draw(&wg, g.QuitChan)
 
 	wg.Add(1)
 	go g.Mover(&wg, g.QuitChan)

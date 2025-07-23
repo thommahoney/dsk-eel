@@ -14,6 +14,7 @@ import (
 func main() {
 	config := config.Config{}
 
+	pflag.BoolVar(&config.DemoMode, "demo", false, "Randomly move eel")
 	pflag.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
 	pflag.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
 	pflag.IPVar(&config.ArtNetDest, "chromatik", net.IP("127.0.0.1"), "IP address of Chromatik")
