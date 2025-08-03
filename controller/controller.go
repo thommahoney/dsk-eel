@@ -36,14 +36,14 @@ type Direction int
 
 const (
 	Dir_Neutral   = Direction(0b0101)
-	Dir_North     = Direction(0b1101)
-	Dir_NorthEast = Direction(0b1111)
-	Dir_East      = Direction(0b0111)
-	Dir_SouthEast = Direction(0b0011)
-	Dir_South     = Direction(0b0001)
-	Dir_SouthWest = Direction(0b0000)
-	Dir_West      = Direction(0b0100)
-	Dir_NorthWest = Direction(0b1100)
+	Dir_North     = Direction(0b0111)
+	Dir_NorthEast = Direction(0b0011)
+	Dir_East      = Direction(0b0001)
+	Dir_SouthEast = Direction(0b0000)
+	Dir_South     = Direction(0b0100)
+	Dir_SouthWest = Direction(0b1100)
+	Dir_West      = Direction(0b1101)
+	Dir_NorthWest = Direction(0b1111)
 )
 
 func (d Direction) String() string {
@@ -77,11 +77,12 @@ type Buttons struct {
 type ButtonStatus int
 
 const (
-	Btn_None   = ButtonStatus(0b0000)
-	Btn_White  = ButtonStatus(0b0001)
-	Btn_Red    = ButtonStatus(0b0010)
-	Btn_Yellow = ButtonStatus(0b0100)
-	Btn_Blue   = ButtonStatus(0b1000)
+	Btn_None   = ButtonStatus(0b00000)
+	Btn_Red    = ButtonStatus(0b00001)
+	Btn_Green  = ButtonStatus(0b00010)
+	Btn_Blue   = ButtonStatus(0b00100)
+	Btn_Yellow = ButtonStatus(0b01000)
+	Btn_White  = ButtonStatus(0b10000)
 )
 
 func (bs ButtonStatus) String() string {
@@ -90,17 +91,20 @@ func (bs ButtonStatus) String() string {
 	}
 
 	s := ""
-	if bs&Btn_White > 0 {
-		s += "⚪️"
-	}
 	if bs&Btn_Red > 0 {
 		s += "️🔴"
+	}
+	if bs&Btn_Green > 0 {
+		s += "🟢"
+	}
+	if bs&Btn_Blue > 0 {
+		s += "🔵"
 	}
 	if bs&Btn_Yellow > 0 {
 		s += "🟡"
 	}
-	if bs&Btn_Blue > 0 {
-		s += "🔵"
+	if bs&Btn_White > 0 {
+		s += "⚪️"
 	}
 
 	if s == "" {
@@ -131,7 +135,6 @@ func NewController(config *config.Config, handleFunc func(ControllerState)) (*Co
 		log.Fatal(err)
 	}
 	c.logger.Info("connected to joystick", "manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
-
 
 	return c, nil
 }
@@ -202,7 +205,7 @@ func (c *Controller) GetState() (*ControllerState, error) {
 		return nil, err
 	}
 
-	slog.Debug("read from device", "length", l, "bytes", c.data)
+	c.logger.Debug("read from device", "length", l, "bytes", c.data)
 
 	cs := &ControllerState{
 		Direction:    c.Joystick.GetDirection(c.data),
@@ -236,7 +239,7 @@ func NewButtons(logger *slog.Logger) *Buttons {
 }
 
 func (b *Buttons) GetStatus(data []byte) ButtonStatus {
-	buttons := data[5] >> 4
+	buttons := data[5] >> 4 + data[6] << 4
 
 	b.logger.Debug("GetStatus", "buttons", buttons)
 
