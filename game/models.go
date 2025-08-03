@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"maps"
 	"math/rand/v2"
 
 	"github.com/thommahoney/dsk-eel/controller"
@@ -133,7 +134,21 @@ func (e *Eel) Move() error {
 		e.Body = append([]*Point{nextPoint}, e.Body[0:e.Length()-1]...)
 	}
 
-	e.Game.Draw()
+	eelBody := e.BodyPixels()
+	food := e.Game.Food
+	foodBody := food.BodyPixels()
+
+	if hasCommonKeys(foodBody, eelBody) {
+		if food.IsFresh() {
+			e.Eat()
+		}
+		food.Chomp(e.TravelDir)
+	}
+
+	maps.Copy(eelBody, foodBody)
+
+	// eelBody now includes foodBody too
+	e.Game.Draw(eelBody)
 
 	return nil
 }

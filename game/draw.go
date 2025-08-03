@@ -15,22 +15,10 @@ func hasCommonKeys(m1, m2 map[int]Color) bool {
 	return false
 }
 
-func (g *Game) Draw() {
-	eelBody := g.Eel.BodyPixels()
-	food := g.Food.BodyPixels()
-
-	if hasCommonKeys(food, eelBody) {
-		if g.Food.IsFresh() {
-			g.Eel.Eat()	
-		}
-		g.Food.Chomp(g.Eel.TravelDir)	
-	}
-
-	pixels := make([]Color, len(g.Segments)*SegmentLength)
+func (g *Game) Draw(colorMap map[int]Color) {
+	pixels := make([]Color, SegmentCount*SegmentLength)
 	for i := 0; i < len(pixels); i++ {
-		if c, key := eelBody[i]; key {
-			pixels[i] = c
-		} else if c, key := food[i]; key {
+		if c, key := colorMap[i]; key {
 			pixels[i] = c
 		} else {
 			pixels[i] = Color{0x69, 0x69, 0x69}

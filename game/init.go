@@ -61,8 +61,8 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 	return &Chromatik{Connection: conn, Node: node}, nil
 }
 
-func InitSegments() [49]*Segment {
-	segments := [49]*Segment{}
+func InitSegments() [SegmentCount]*Segment {
+	segments := [SegmentCount]*Segment{}
 	offset := 0
 
 	// purple - loop 1

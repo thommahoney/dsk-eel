@@ -24,6 +24,8 @@ var Red = Color{0xff, 0x00, 0x00}    // #FF0000
 var White = Color{0xff, 0xff, 0xff}  // #ffffff
 var Yellow = Color{0xff, 0xff, 0x00} // #FFFF00
 
+const SegmentCount = 49
+
 // Tracks game state
 type Game struct {
 	Chromatik    *Chromatik
@@ -33,7 +35,7 @@ type Game struct {
 	Food         *Food
 	PrimaryColor Color
 	QuitChan     chan struct{}
-	Segments     [49]*Segment
+	Segments     [SegmentCount]*Segment
 }
 
 func NewGame(config *config.Config) (*Game, error) {
@@ -60,7 +62,7 @@ func NewGame(config *config.Config) (*Game, error) {
 }
 
 func (g *Game) RandomSegment() *Segment {
-	return g.Segments[rand.N(49)]
+	return g.Segments[rand.N(SegmentCount)]
 }
 
 func (g *Game) Run() {
