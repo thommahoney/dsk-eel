@@ -35,9 +35,9 @@ func (g *Game) Draw(colorMap map[int]Color) {
 		}
 		for i := 0; i < max; i++ {
 			p := univ*170 + i
-			data[i*3+0] = pixels[p][0]
-			data[i*3+1] = pixels[p][1]
-			data[i*3+2] = pixels[p][2]
+			data[i*RGB+0] = pixels[p][0]
+			data[i*RGB+1] = pixels[p][1]
+			data[i*RGB+2] = pixels[p][2]
 		}
 
 		p := &packet.ArtDMXPacket{

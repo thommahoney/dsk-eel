@@ -51,8 +51,8 @@ func NewEel(g *Game) *Eel {
 // @todo don't spawn food on top of eel
 func NewFood(g *Game) *Food {
 	return &Food{
-		Body: g.NewBody(),
-		Game: g,
+		Body:  g.NewBody(),
+		Game:  g,
 		Fresh: true,
 	}
 }
@@ -134,7 +134,10 @@ func (e *Eel) Move() error {
 		e.Body = append([]*Point{nextPoint}, e.Body[0:e.Length()-1]...)
 	}
 
-	eelBody := e.BodyPixels()
+	eelBody, err := e.BodyPixels()
+	if err != nil {
+		return err
+	}
 	food := e.Game.Food
 	foodBody := food.BodyPixels()
 
@@ -153,21 +156,25 @@ func (e *Eel) Move() error {
 	return nil
 }
 
-func (e *Eel) BodyPixels() map[int]Color {
+func (e *Eel) BodyPixels() (map[int]Color, error) {
 	pixels := map[int]Color{}
 
 	for i, point := range e.Body {
-		pixels[point.Segment.Offset+point.Position] = hueToRGB((float64(i) * 360.0 / float64(len(e.Body))))
+		pixelPos := point.Segment.Offset + point.Position
+		if _, k := pixels[pixelPos]; k {
+			return nil, fmt.Errorf("eel body overlaps")
+		}
+		pixels[pixelPos] = hueToRGB((float64(i) * 360.0 / float64(len(e.Body))))
 	}
 
-	return pixels
+	return pixels, nil
 }
 
 // Represents the Food that the Eel encounters on its journey
 // When the Eel encounters Food, its length is increased
 type Food struct {
-	Body []*Point
-	Game *Game
+	Body  []*Point
+	Game  *Game
 	Fresh bool
 }
 
@@ -187,9 +194,9 @@ func (f *Food) IsFresh() bool {
 
 func (f *Food) Chomp(d Direction) {
 	if d == Greater {
-	 	f.Body = f.Body[0:len(f.Body)-1]
+		f.Body = f.Body[0 : len(f.Body)-1]
 	} else {
-	 	f.Body = f.Body[1:len(f.Body)]
+		f.Body = f.Body[1:len(f.Body)]
 	}
 	f.Fresh = false
 }
