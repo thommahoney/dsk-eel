@@ -28,20 +28,39 @@ type Eel struct {
 	TravelDir  Direction
 }
 
-func NewEel(g *Game) *Eel {
-	// @todo randomize starting point
-	startingSegment := g.Segments[0]
+func (g *Game) NewBody() []*Point {
+	startingSegment := g.RandomSegment()
 	body := []*Point{}
-	for i := GrowthIncrement - 1; i >= 0; i-- {
+	start := Max(rand.N(SegmentLength), GrowthIncrement-1)
+	for i := start; i > start-GrowthIncrement; i-- {
 		body = append(body, &Point{Segment: startingSegment, Position: i})
 	}
+	return body
+}
 
+func NewEel(g *Game) *Eel {
 	return &Eel{
-		Body:       body,
+		Body:       g.NewBody(),
 		ControlDir: controller.Dir_Neutral,
 		Game:       g,
 		TravelDir:  Greater,
 	}
+}
+
+// @todo don't spawn food on top of eel
+func NewFood(g *Game) *Food {
+	return &Food{
+		Body: g.NewBody(),
+		Game: g,
+		Fresh: true,
+	}
+}
+
+func Max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (e *Eel) Length() int {
@@ -71,7 +90,7 @@ func (e *Eel) Move() error {
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
 
 		var cDir controller.Direction
-		if e.Game.Config.DemoMode {
+		if e.Game.Config.DemoMode && e.ControlDir == controller.Dir_Neutral {
 			switch rand.N(4) {
 			case 0:
 				cDir = controller.Dir_North
@@ -106,6 +125,10 @@ func (e *Eel) Move() error {
 	if e.Growth > 0 {
 		e.Body = append([]*Point{nextPoint}, e.Body...)
 		e.Growth--
+
+		if e.Growth == 0 {
+			e.Game.Food = NewFood(e.Game)
+		}
 	} else {
 		e.Body = append([]*Point{nextPoint}, e.Body[0:e.Length()-1]...)
 	}
@@ -118,8 +141,8 @@ func (e *Eel) Move() error {
 func (e *Eel) BodyPixels() map[int]Color {
 	pixels := map[int]Color{}
 
-	for _, point := range(e.Body) {
-		pixels[point.Segment.Offset + point.Position] = point.Segment.Color
+	for i, point := range e.Body {
+		pixels[point.Segment.Offset+point.Position] = hueToRGB((float64(i) * 360.0 / float64(len(e.Body))))
 	}
 
 	return pixels
@@ -128,7 +151,32 @@ func (e *Eel) BodyPixels() map[int]Color {
 // Represents the Food that the Eel encounters on its journey
 // When the Eel encounters Food, its length is increased
 type Food struct {
-	Point *Point
+	Body []*Point
+	Game *Game
+	Fresh bool
+}
+
+func (f *Food) BodyPixels() map[int]Color {
+	pixels := map[int]Color{}
+
+	for i, point := range f.Body {
+		pixels[point.Segment.Offset+point.Position] = hueToRGB((float64(i) * 360.0 / GrowthIncrement))
+	}
+
+	return pixels
+}
+
+func (f *Food) IsFresh() bool {
+	return f.Fresh
+}
+
+func (f *Food) Chomp(d Direction) {
+	if d == Greater {
+	 	f.Body = f.Body[0:len(f.Body)-1]
+	} else {
+	 	f.Body = f.Body[1:len(f.Body)]
+	}
+	f.Fresh = false
 }
 
 // Hop describes a junction point between Segments

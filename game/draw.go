@@ -6,11 +6,31 @@ import (
 	"github.com/jsimonetti/go-artnet/packet"
 )
 
+func hasCommonKeys(m1, m2 map[int]Color) bool {
+	for k := range m1 {
+		if _, found := m2[k]; found {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Game) Draw() {
 	eelBody := g.Eel.BodyPixels()
+	food := g.Food.BodyPixels()
+
+	if hasCommonKeys(food, eelBody) {
+		if g.Food.IsFresh() {
+			g.Eel.Eat()	
+		}
+		g.Food.Chomp(g.Eel.TravelDir)	
+	}
+
 	pixels := make([]Color, len(g.Segments)*SegmentLength)
 	for i := 0; i < len(pixels); i++ {
 		if c, key := eelBody[i]; key {
+			pixels[i] = c
+		} else if c, key := food[i]; key {
 			pixels[i] = c
 		} else {
 			pixels[i] = Color{0x69, 0x69, 0x69}
@@ -45,32 +65,30 @@ func (g *Game) Draw() {
 	}
 }
 
-// hsvToRGB converts hue (0-360), saturation (0-1), value (0-1) to RGB (0-255).
-func hsvToRGB(hue, saturation, value float64) Color {
-	chroma := value * saturation
-	x := chroma * (1 - math.Abs(math.Mod(hue/60, 2)-1))
-	m := value - chroma
+// hueToRGB converts hue (0-360), RGB (0-255). Assumes saturation and value of 1.0
+func hueToRGB(hue float64) Color {
+	x := 1 - math.Abs(math.Mod(hue/60, 2)-1)
 
 	var rf, gf, bf float64
 
 	switch {
 	case hue < 60:
-		rf, gf, bf = chroma, x, 0
+		rf, gf, bf = 1.0, x, 0
 	case hue < 120:
-		rf, gf, bf = x, chroma, 0
+		rf, gf, bf = x, 1.0, 0
 	case hue < 180:
-		rf, gf, bf = 0, chroma, x
+		rf, gf, bf = 0, 1.0, x
 	case hue < 240:
-		rf, gf, bf = 0, x, chroma
+		rf, gf, bf = 0, x, 1.0
 	case hue < 300:
-		rf, gf, bf = x, 0, chroma
+		rf, gf, bf = x, 0, 1.0
 	default:
-		rf, gf, bf = chroma, 0, x
+		rf, gf, bf = 1.0, 0, x
 	}
 
 	return Color{
-		byte((rf + m) * 255),
-		byte((gf + m) * 255),
-		byte((bf + m) * 255),
+		byte(rf * 255),
+		byte(gf * 255),
+		byte(bf * 255),
 	}
 }

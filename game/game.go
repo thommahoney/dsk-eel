@@ -11,18 +11,18 @@ import (
 )
 
 const (
-	MovementFrequency = 25 * time.Millisecond
+	MovementFrequency = 10 * time.Millisecond
 )
 
 type Color [3]byte
 
-var Yellow = Color{0xff, 0xff, 0x00} // #FFFF00
-var Blue = Color{0x00, 0x00, 0xff}   // #0000FF
-var Red = Color{0xff, 0x00, 0x00}    // #FF0000
 var Black = Color{0x00, 0x00, 0x00}  // #000000
-var White = Color{0xff, 0xff, 0xff}  // #ffffff
-var Purple = Color{0xae, 0x00, 0xff} // #ae00ff
+var Blue = Color{0x00, 0x00, 0xff}   // #0000FF
 var Green = Color{0x00, 0xff, 0x00}  // #00ff00
+var Purple = Color{0xae, 0x00, 0xff} // #ae00ff
+var Red = Color{0xff, 0x00, 0x00}    // #FF0000
+var White = Color{0xff, 0xff, 0xff}  // #ffffff
+var Yellow = Color{0xff, 0xff, 0x00} // #FFFF00
 
 // Tracks game state
 type Game struct {
@@ -30,6 +30,7 @@ type Game struct {
 	Config       *config.Config
 	Controller   *controller.Controller
 	Eel          *Eel
+	Food         *Food
 	PrimaryColor Color
 	QuitChan     chan struct{}
 	Segments     [49]*Segment
@@ -58,10 +59,15 @@ func NewGame(config *config.Config) (*Game, error) {
 	return game, nil
 }
 
+func (g *Game) RandomSegment() *Segment {
+	return g.Segments[rand.N(49)]
+}
+
 func (g *Game) Run() {
 	g.Config.Logger.Info("Starting game")
 
 	g.Eel = NewEel(g)
+	g.Food = NewFood(g)
 
 	var wg sync.WaitGroup
 	g.QuitChan = make(chan struct{})

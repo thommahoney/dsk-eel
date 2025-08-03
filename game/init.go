@@ -769,7 +769,7 @@ func InitSegments() [49]*Segment {
 }
 
 func NewSegment(label string, offset int, _color Color) Segment {
-	return Segment{Label: label, Length: SegmentLength, Offset: offset, Color: hsvToRGB((float64(offset) * 360.0 / 1078), 1.0, 1.0)}
+	return Segment{Label: label, Length: SegmentLength, Offset: offset, Color: hueToRGB((float64(offset) * 360.0 / 1078))}
 }
 
 func NewStartHop(segment *Segment) Hop {
