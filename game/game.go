@@ -106,23 +106,26 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 	g.Eel.ControlDir = state.Direction
 
 	// special case for all buttons held (black is drawn as a rainbow)
-	if state.ButtonStatus&controller.Btn_White > 0 &&
-		state.ButtonStatus&controller.Btn_Red > 0 &&
+	if state.ButtonStatus&controller.Btn_Red > 0 &&
+		state.ButtonStatus&controller.Btn_Green > 0 &&
+		state.ButtonStatus&controller.Btn_Blue > 0 &&
 		state.ButtonStatus&controller.Btn_Yellow > 0 &&
-		state.ButtonStatus&controller.Btn_Blue > 0 {
+		state.ButtonStatus&controller.Btn_White > 0 {
 		g.PrimaryColor = Black
 		return
 	}
 
 	switch state.ButtonStatus {
-	case controller.Btn_White:
-		g.PrimaryColor = White
 	case controller.Btn_Red:
 		g.PrimaryColor = Red
-	case controller.Btn_Yellow:
-		g.PrimaryColor = Yellow
+	case controller.Btn_Green:
+		g.PrimaryColor = Green
 	case controller.Btn_Blue:
 		g.PrimaryColor = Blue
+	case controller.Btn_Yellow:
+		g.PrimaryColor = Yellow
+	case controller.Btn_White:
+		g.PrimaryColor = White
 	case controller.Btn_None:
 		// No-Op
 	default:
