@@ -11,23 +11,14 @@ import (
 )
 
 const (
-	MovementFrequency = 100 * time.Millisecond
+	MovementFrequency = 50 * time.Millisecond
 	SegmentCount      = 49
 	RGB               = 3
 )
 
-type Color [RGB]byte
-
-var Black = Color{0x00, 0x00, 0x00}  // #000000
-var Blue = Color{0x00, 0x00, 0xff}   // #0000FF
-var Green = Color{0x00, 0xff, 0x00}  // #00ff00
-var Purple = Color{0xae, 0x00, 0xff} // #ae00ff
-var Red = Color{0xff, 0x00, 0x00}    // #FF0000
-var White = Color{0xff, 0xff, 0xff}  // #ffffff
-var Yellow = Color{0xff, 0xff, 0x00} // #FFFF00
-
 // Tracks game state
 type Game struct {
+	Brightness   float64
 	Chromatik    *Chromatik
 	Config       *config.Config
 	Controller   *controller.Controller
@@ -40,6 +31,7 @@ type Game struct {
 
 func NewGame(config *config.Config) (*Game, error) {
 	game := &Game{
+		Brightness:   1.0,
 		Config:       config,
 		PrimaryColor: RandomColor(),
 	}
@@ -75,7 +67,10 @@ func (g *Game) Run() {
 	g.QuitChan = make(chan struct{})
 
 	wg.Add(1)
-	go g.Mover(&wg, g.QuitChan)
+	go g.Mover(&wg)
+
+	wg.Add(1)
+	go g.BrightnessOscillator(&wg)
 
 	wg.Wait()
 }
@@ -86,7 +81,7 @@ func (g *Game) GameOver() {
 }
 
 // calls Eel.Move() on an interval
-func (g *Game) Mover(wg *sync.WaitGroup, quit <-chan struct{}) {
+func (g *Game) Mover(wg *sync.WaitGroup) {
 	defer wg.Done()
 	ticker := time.NewTicker(MovementFrequency)
 	defer ticker.Stop()
@@ -101,8 +96,30 @@ func (g *Game) Mover(wg *sync.WaitGroup, quit <-chan struct{}) {
 				return
 			}
 
-		case <-quit:
+		case <-g.QuitChan:
 			g.Config.Logger.Info("Mover received quit")
+			return
+		}
+	}
+}
+
+func (g *Game) BrightnessOscillator(wg *sync.WaitGroup) {
+	defer wg.Done()
+	ticker := time.NewTicker(MovementFrequency)
+	defer ticker.Stop()
+
+	increment := -0.05
+
+	for {
+		select {
+		case <-ticker.C:
+			g.Brightness += increment
+			if g.Brightness <= 0.6 || g.Brightness >= 1.0 {
+				increment = increment * -1
+			}
+
+		case <-g.QuitChan:
+			g.Config.Logger.Info("BrightnessOscillator received quit")
 			return
 		}
 	}
@@ -139,8 +156,4 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 	default:
 		g.PrimaryColor = RandomColor()
 	}
-}
-
-func RandomColor() Color {
-	return Color{byte(rand.IntN(255)), byte(rand.IntN(255)), byte(rand.IntN(255))}
 }

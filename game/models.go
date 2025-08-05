@@ -164,7 +164,7 @@ func (e *Eel) BodyPixels() (map[int]Color, error) {
 		if _, k := pixels[pixelPos]; k {
 			return nil, fmt.Errorf("eel body overlaps")
 		}
-		pixels[pixelPos] = hueToRGB((float64(i) * 360.0 / float64(len(e.Body))))
+		pixels[pixelPos] = hsvToRGB((float64(i) * 360.0 / float64(len(e.Body))), 1.0, 1.0)
 	}
 
 	return pixels, nil
@@ -182,7 +182,7 @@ func (f *Food) BodyPixels() map[int]Color {
 	pixels := map[int]Color{}
 
 	for i, point := range f.Body {
-		pixels[point.Segment.Offset+point.Position] = hueToRGB((float64(i) * 360.0 / GrowthIncrement))
+		pixels[point.Segment.Offset+point.Position] = hsvToRGB((float64(i) * 360.0 / GrowthIncrement), 1.0, f.Game.Brightness)
 	}
 
 	return pixels

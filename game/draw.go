@@ -1,8 +1,6 @@
 package game
 
 import (
-	"math"
-
 	"github.com/jsimonetti/go-artnet/packet"
 )
 
@@ -50,33 +48,5 @@ func (g *Game) Draw(colorMap map[int]Color) {
 
 		b, _ := p.MarshalBinary()
 		_, _ = g.Chromatik.Send(b)
-	}
-}
-
-// hueToRGB converts hue (0-360), RGB (0-255). Assumes saturation and value of 1.0
-func hueToRGB(hue float64) Color {
-	x := 1 - math.Abs(math.Mod(hue/60, 2)-1)
-
-	var rf, gf, bf float64
-
-	switch {
-	case hue < 60:
-		rf, gf, bf = 1.0, x, 0
-	case hue < 120:
-		rf, gf, bf = x, 1.0, 0
-	case hue < 180:
-		rf, gf, bf = 0, 1.0, x
-	case hue < 240:
-		rf, gf, bf = 0, x, 1.0
-	case hue < 300:
-		rf, gf, bf = x, 0, 1.0
-	default:
-		rf, gf, bf = 1.0, 0, x
-	}
-
-	return Color{
-		byte(rf * 255),
-		byte(gf * 255),
-		byte(bf * 255),
 	}
 }
