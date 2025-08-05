@@ -26,32 +26,37 @@ type Eel struct {
 	ControlDir controller.Direction
 	Game       *Game
 	Growth     int
+	Segment    *Segment
 	TravelDir  Direction
 }
 
-func (g *Game) NewBody() []*Point {
+func (g *Game) NewBody() (*Segment, []*Point) {
 	startingSegment := g.RandomSegment()
 	body := []*Point{}
 	start := Max(rand.N(SegmentLength), GrowthIncrement-1)
 	for i := start; i > start-GrowthIncrement; i-- {
 		body = append(body, &Point{Segment: startingSegment, Position: i})
 	}
-	return body
+	return startingSegment, body
 }
 
 func NewEel(g *Game) *Eel {
+	segment, body := g.NewBody()
 	return &Eel{
-		Body:       g.NewBody(),
+		Body:       body,
 		ControlDir: controller.Dir_Neutral,
 		Game:       g,
+		Segment:    segment,
 		TravelDir:  Greater,
 	}
 }
 
 // @todo don't spawn food on top of eel
 func NewFood(g *Game) *Food {
+	_, body := g.NewBody()
+
 	return &Food{
-		Body:  g.NewBody(),
+		Body:  body,
 		Game:  g,
 		Fresh: true,
 	}
@@ -86,6 +91,7 @@ func (e *Eel) Move() error {
 	travelDir := e.TravelDir
 
 	var nextPoint *Point
+	nextHop := head.Segment.NextHop(travelDir, e.ControlDir)
 
 	if (head.Position == 0 && travelDir == Lesser) ||
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
@@ -105,11 +111,14 @@ func (e *Eel) Move() error {
 		} else {
 			cDir = e.ControlDir
 		}
-		nextHop := head.Segment.NextHop(travelDir, cDir)
+
+		nextHop = head.Segment.NextHop(travelDir, cDir)
 
 		if nextHop == nil {
 			return fmt.Errorf("no next hop")
 		}
+
+		e.Segment = nextHop.Point.Segment
 
 		nextPoint = nextHop.Point
 		e.TravelDir = nextHop.Direction
@@ -148,12 +157,58 @@ func (e *Eel) Move() error {
 		food.Chomp(e.TravelDir)
 	}
 
-	maps.Copy(eelBody, foodBody)
+	pixels := e.TurnSignals(nextHop)
 
-	// eelBody now includes foodBody too
-	e.Game.Draw(eelBody)
+	maps.Copy(pixels, eelBody)
+	maps.Copy(pixels, foodBody)
+
+	e.Game.Draw(pixels)
 
 	return nil
+}
+
+func (e *Eel) TurnSignals(h *Hop) map[int]Color {
+	pixels := map[int]Color{}
+
+	if h != nil {
+		for i := 0; i < 5; i++ {
+			var pos int
+			if h.Direction == Greater {
+				pos = h.Point.Segment.Offset + i
+			} else {
+				pos = h.Point.Segment.Offset + SegmentLength - i - 1
+			}
+			pixels[pos] = hsvToRGB(60, 1.0, e.Game.Brightness-(float64(i)*.1))
+		}
+	} else {
+		for i := 0; i < 5; i++ {
+			var pos int
+			var up, down *Hop
+			if e.TravelDir == Greater {
+				up = e.Segment.GreaterUp
+				down = e.Segment.GreaterDown
+			} else {
+				up = e.Segment.LesserUp
+				down = e.Segment.LesserDown
+			}
+
+			if up.Direction == Greater {
+				pos = up.Point.Segment.Offset + i
+			} else {
+				pos = up.Point.Segment.Offset + SegmentLength - i - 1
+			}
+			pixels[pos] = hsvToRGB(0, 1.0, e.Game.Brightness-(float64(i)*.1))
+
+			if down.Direction == Greater {
+				pos = down.Point.Segment.Offset + i
+			} else {
+				pos = down.Point.Segment.Offset + SegmentLength - i - 1
+			}
+			pixels[pos] = hsvToRGB(0, 1.0, e.Game.Brightness-(float64(i)*.1))
+		}
+	}
+
+	return pixels
 }
 
 func (e *Eel) BodyPixels() (map[int]Color, error) {
@@ -243,7 +298,6 @@ type Segment struct {
 // If NextHop returns nil it means either there's a bug in the program or the
 // game is over due to incorrect controller direction
 func (s *Segment) NextHop(tDir Direction, cDir controller.Direction) *Hop {
-	// @todo: handle NorthEast, SouthEast, SouthWest, NorthWest directions
 	switch tDir {
 	case Greater:
 		switch cDir {
@@ -255,6 +309,22 @@ func (s *Segment) NextHop(tDir Direction, cDir controller.Direction) *Hop {
 			return s.GreaterRight
 		case controller.Dir_West:
 			return s.GreaterLeft
+		case controller.Dir_NorthEast:
+			if s.GreaterUp == s.GreaterRight {
+				return s.GreaterUp
+			}
+		case controller.Dir_SouthEast:
+			if s.GreaterDown == s.GreaterRight {
+				return s.GreaterDown
+			}
+		case controller.Dir_SouthWest:
+			if s.GreaterDown == s.GreaterLeft {
+				return s.GreaterDown
+			}
+		case controller.Dir_NorthWest:
+			if s.GreaterUp == s.GreaterLeft {
+				return s.GreaterUp
+			}
 		}
 	case Lesser:
 		switch cDir {
@@ -266,6 +336,22 @@ func (s *Segment) NextHop(tDir Direction, cDir controller.Direction) *Hop {
 			return s.LesserRight
 		case controller.Dir_West:
 			return s.LesserLeft
+		case controller.Dir_NorthEast:
+			if s.LesserUp == s.LesserRight {
+				return s.LesserUp
+			}
+		case controller.Dir_SouthEast:
+			if s.LesserDown == s.LesserRight {
+				return s.LesserDown
+			}
+		case controller.Dir_SouthWest:
+			if s.LesserDown == s.LesserLeft {
+				return s.LesserDown
+			}
+		case controller.Dir_NorthWest:
+			if s.LesserUp == s.LesserLeft {
+				return s.LesserUp
+			}
 		}
 	}
 
