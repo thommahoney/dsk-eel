@@ -79,6 +79,7 @@ func (g *Game) Run() {
 
 func (g *Game) GameOver() {
 	g.Config.Logger.Info("GameOver")
+	// @todo trigger sound!
 	close(g.QuitChan)
 }
 

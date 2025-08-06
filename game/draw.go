@@ -27,6 +27,7 @@ func (g *Game) Draw(colorMap map[int]Color) {
 	for univ := 0; univ < 7; univ++ {
 		data := [512]byte{}
 
+		// @todo clean this up
 		max := 170
 		if univ == 6 {
 			max = 58
