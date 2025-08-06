@@ -59,6 +59,7 @@ func NewFood(g *Game) *Food {
 		Body:  body,
 		Game:  g,
 		Fresh: true,
+		Hue:   rand.Float64()*360.0,
 	}
 }
 
@@ -148,7 +149,7 @@ func (e *Eel) Move() error {
 		return err
 	}
 	food := e.Game.Food
-	foodBody := food.BodyPixels()
+	foodBody := food.Pixels()
 
 	if hasCommonKeys(foodBody, eelBody) {
 		if food.IsFresh() {
@@ -229,15 +230,17 @@ func (e *Eel) BodyPixels(brightness float64, validate bool) (map[int]Color, erro
 // When the Eel encounters Food, its length is increased
 type Food struct {
 	Body  []*Point
-	Game  *Game
 	Fresh bool
+	Game  *Game
+	Hue   float64
 }
 
-func (f *Food) BodyPixels() map[int]Color {
+func (f *Food) Pixels() map[int]Color {
 	pixels := map[int]Color{}
 
-	for i, point := range f.Body {
-		pixels[point.Segment.Offset+point.Position] = hsvToRGB((float64(i) * 360.0 / GrowthIncrement), 1.0, f.Game.Brightness)
+	color := hsvToRGB(f.Hue, 1.0, f.Game.Brightness)
+	for _, point := range f.Body {
+		pixels[point.Segment.Offset+point.Position] = color
 	}
 
 	return pixels
