@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	MovementFrequency = 50 * time.Millisecond
-	SegmentCount      = 49
+	MaxBrightness     = 1.0
+	MinBrightness     = 0.6
+	MovementFrequency = 70 * time.Millisecond
 	RGB               = 3
+	SegmentCount      = 49
 )
 
 // Tracks game state
@@ -114,12 +116,44 @@ func (g *Game) BrightnessOscillator(wg *sync.WaitGroup) {
 		select {
 		case <-ticker.C:
 			g.Brightness += increment
-			if g.Brightness <= 0.6 || g.Brightness >= 1.0 {
+			if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
 				increment = increment * -1
 			}
 
 		case <-g.QuitChan:
 			g.Config.Logger.Info("BrightnessOscillator received quit")
+			g.Brightness = 1.0
+			wg.Add(1)
+			go g.GameOverAnimation(wg)
+			return
+		}
+	}
+}
+
+func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	ticker := time.NewTicker(MovementFrequency)
+	defer ticker.Stop()
+
+	done := time.NewTicker(3 * time.Second)
+	defer done.Stop()
+
+	increment := -0.05
+
+	for {
+		select {
+		case <-ticker.C:
+			g.Brightness += increment
+			if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
+				increment = increment * -1
+			}
+
+			eelBody, _ := g.Eel.BodyPixels(g.Brightness, false)
+			g.Draw(eelBody)
+
+		case <-done.C:
+			g.Brightness = 1.0
 			return
 		}
 	}

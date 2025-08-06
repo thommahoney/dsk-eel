@@ -143,7 +143,7 @@ func (e *Eel) Move() error {
 		e.Body = append([]*Point{nextPoint}, e.Body[0:e.Length()-1]...)
 	}
 
-	eelBody, err := e.BodyPixels()
+	eelBody, err := e.BodyPixels(1.0, true)
 	if err != nil {
 		return err
 	}
@@ -211,15 +211,15 @@ func (e *Eel) TurnSignals(h *Hop) map[int]Color {
 	return pixels
 }
 
-func (e *Eel) BodyPixels() (map[int]Color, error) {
+func (e *Eel) BodyPixels(brightness float64, validate bool) (map[int]Color, error) {
 	pixels := map[int]Color{}
 
 	for i, point := range e.Body {
 		pixelPos := point.Segment.Offset + point.Position
-		if _, k := pixels[pixelPos]; k {
+		if _, k := pixels[pixelPos]; k && validate {
 			return nil, fmt.Errorf("eel body overlaps")
 		}
-		pixels[pixelPos] = hsvToRGB((float64(i) * 360.0 / float64(len(e.Body))), 1.0, 1.0)
+		pixels[pixelPos] = hsvToRGB((float64(i) * 360.0 / float64(len(e.Body))), 1.0, brightness)
 	}
 
 	return pixels, nil
