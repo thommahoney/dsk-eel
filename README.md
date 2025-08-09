@@ -15,7 +15,12 @@ This game was developed using a basic Ubuntu virtual machine with go installed.
 Documentation to come
 
 ```bash
-sudo apt-get install udev golang
+sudo apt-get install libudev-dev
+# If you're on an older version of ubuntu
+# sudo add-apt-repository ppa:longsleep/golang-backports
+# sudo apt update
+sudo apt install golang-go
+go build
 ```
 
 ## Design Notes
