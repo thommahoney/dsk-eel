@@ -12,7 +12,11 @@ This is the classic game of snake but displayed on the inside of a geodesic dome
 
 This game was developed using a basic Ubuntu virtual machine with go installed.
 
-Documentation to come.
+Documentation to come
+
+```bash
+sudo apt-get install udev golang
+```
 
 ## Design Notes
 
