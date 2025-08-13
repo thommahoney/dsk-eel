@@ -144,7 +144,7 @@ func (e *Eel) Move() error {
 		e.Body = append([]*Point{nextPoint}, e.Body[0:e.Length()-1]...)
 	}
 
-	eelBody, err := e.BodyPixels(1.0, true)
+	eelBody, err := e.Pixels(1.0, false)
 	if err != nil {
 		return err
 	}
@@ -212,15 +212,29 @@ func (e *Eel) TurnSignals(h *Hop) map[int]Color {
 	return pixels
 }
 
-func (e *Eel) BodyPixels(brightness float64, validate bool) (map[int]Color, error) {
+func (e *Eel) Shrink() {
+	bodyLength := len(e.Body)
+	if bodyLength >= 2 {
+		e.Body = e.Body[1:bodyLength-1]
+	} else {
+		e.Body = nil
+	}
+}
+
+func (e *Eel) Pixels(brightness float64, gameOver bool) (map[int]Color, error) {
 	pixels := map[int]Color{}
 
+	bodyLength := len(e.Body)
 	for i, point := range e.Body {
 		pixelPos := point.Segment.Offset + point.Position
-		if _, k := pixels[pixelPos]; k && validate {
+		if _, k := pixels[pixelPos]; k && !gameOver {
 			return nil, fmt.Errorf("eel body overlaps")
 		}
-		pixels[pixelPos] = hsvToRGB((float64(i) * 360.0 / float64(len(e.Body))), 1.0, brightness)
+		if gameOver && (i == 0 || i == bodyLength-1) {
+			pixels[pixelPos] = White
+		} else {
+			pixels[pixelPos] = hsvToRGB((float64(i) * 360.0 / float64(bodyLength)), 1.0, brightness)
+		}
 	}
 
 	return pixels, nil
@@ -238,7 +252,8 @@ type Food struct {
 func (f *Food) Pixels() map[int]Color {
 	pixels := map[int]Color{}
 
-	color := hsvToRGB(f.Hue, 1.0, f.Game.Brightness)
+	// white
+	color := hsvToRGB(0.0, 0.0, f.Game.Brightness)
 	for _, point := range f.Body {
 		pixels[point.Segment.Offset+point.Position] = color
 	}

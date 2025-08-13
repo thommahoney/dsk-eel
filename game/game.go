@@ -134,29 +134,24 @@ func (g *Game) BrightnessOscillator(wg *sync.WaitGroup) {
 func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	ticker := time.NewTicker(MovementFrequency)
+	ticker := time.NewTicker(MovementFrequency * 2)
 	defer ticker.Stop()
-
-	done := time.NewTicker(3 * time.Second)
-	defer done.Stop()
 
 	increment := -0.05
 
-	for {
-		select {
-		case <-ticker.C:
-			g.Brightness += increment
-			if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
-				increment = increment * -1
-			}
+	for range ticker.C {
+		g.Brightness += increment
+		if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
+			increment = increment * -1
+		}
 
-			eelBody, _ := g.Eel.BodyPixels(g.Brightness, false)
-			g.Draw(eelBody)
-
-		case <-done.C:
+		g.Eel.Shrink()
+		eelBody, _ := g.Eel.Pixels(g.Brightness, true)
+		if len(eelBody) == 0 {
 			g.Brightness = 1.0
 			return
 		}
+		g.Draw(eelBody)
 	}
 }
 
