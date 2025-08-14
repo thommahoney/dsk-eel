@@ -48,6 +48,6 @@ func (g *Game) Draw(colorMap map[int]Color) {
 		sequence++
 
 		b, _ := p.MarshalBinary()
-		_, _ = g.Chromatik.Send(b)
+		_, _ = g.Chromatik.ArtNetSend(b)
 	}
 }

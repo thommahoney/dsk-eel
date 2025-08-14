@@ -12,5 +12,7 @@ type Config struct {
 	ListenSubnet   string
 	Logger         *slog.Logger
 	NoJoy          bool
+	OscDest        string
+	OscPort        int
 	Verbosity      int
 }

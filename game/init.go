@@ -1,13 +1,5 @@
 package game
 
-import (
-	"fmt"
-	"net"
-
-	"github.com/jsimonetti/go-artnet/packet"
-	"github.com/thommahoney/dsk-eel/config"
-)
-
 const (
 	SegmentLength = 22
 )
@@ -23,42 +15,6 @@ func (g *Game) Init() error {
 	g.Segments = InitSegments()
 
 	return nil
-}
-
-func InitChromatik(c *config.Config) (*Chromatik, error) {
-	_, cidrnet, _ := net.ParseCIDR(c.ListenSubnet)
-
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		fmt.Printf("error getting ips: %s\n", err)
-	}
-
-	var ip net.IP
-
-	for _, addr := range addrs {
-		ip = addr.(*net.IPNet).IP
-		if cidrnet.Contains(ip) {
-			break
-		}
-	}
-
-	dst := fmt.Sprintf("%s:%d", c.ArtNetDest, packet.ArtNetPort)
-	node, err := net.ResolveUDPAddr("udp", dst)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving udp dst: %s", err)
-	}
-	src := fmt.Sprintf("%s:%d", ip, packet.ArtNetPort)
-	localAddr, err := net.ResolveUDPAddr("udp", src)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving udp src: %s", err)
-	}
-
-	conn, err := net.ListenUDP("udp", localAddr)
-	if err != nil {
-		return nil, fmt.Errorf("error opening udp: %s", err)
-	}
-
-	return &Chromatik{Connection: conn, Node: node}, nil
 }
 
 func InitSegments() [SegmentCount]*Segment {

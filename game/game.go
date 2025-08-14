@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -26,6 +27,8 @@ type Game struct {
 	Controller   *controller.Controller
 	Eel          *Eel
 	Food         *Food
+	MoverTicker  *time.Ticker
+	Paused       bool
 	PrimaryColor Color
 	QuitChan     chan struct{}
 	Segments     [SegmentCount]*Segment
@@ -83,15 +86,26 @@ func (g *Game) GameOver() {
 	close(g.QuitChan)
 }
 
+func (g *Game) Pause() {
+	// max duration of 270 years or something
+	g.MoverTicker.Reset(math.MaxInt64 * time.Nanosecond)
+	g.Paused = true
+}
+
+func (g *Game) Resume() {
+	g.MoverTicker.Reset(MovementFrequency)
+	g.Paused = false
+}
+
 // calls Eel.Move() on an interval
 func (g *Game) Mover(wg *sync.WaitGroup) {
 	defer wg.Done()
-	ticker := time.NewTicker(MovementFrequency)
-	defer ticker.Stop()
+	g.MoverTicker = time.NewTicker(MovementFrequency)
+	defer g.MoverTicker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-g.MoverTicker.C:
 			err := g.Eel.Move()
 			if err != nil {
 				g.Config.Logger.Info("Mover sent game over", "err", err)
@@ -170,20 +184,36 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 		return
 	}
 
-	switch state.ButtonStatus {
-	case controller.Btn_Red:
-		g.PrimaryColor = Red
-	case controller.Btn_Green:
-		g.PrimaryColor = Green
-	case controller.Btn_Blue:
-		g.PrimaryColor = Blue
-	case controller.Btn_Yellow:
-		g.PrimaryColor = Yellow
-	case controller.Btn_White:
-		g.PrimaryColor = White
-	case controller.Btn_None:
+	g.HandleButtonPress(state.ButtonStatus)
+}
+
+func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
+	if status == controller.Btn_None {
 		// No-Op
-	default:
-		g.PrimaryColor = RandomColor()
+		return
+	}
+	
+	// @todo add back an easter egg for multiple buttons pressed
+
+	for bs, addr := range buttonToOSCAddress {
+		val := float32(0.0)
+		if bs == status {
+			val = 1.0
+		}
+
+		err := g.Chromatik.OscSend(addr, val)
+		if err != nil {
+			g.Config.Logger.Error("error handling button press", "error", err)
+		}
+	}
+
+	if status == controller.Btn_White {
+		if g.Paused {
+			g.Resume()
+		} else {
+			g.Pause()
+		}
+	} else {
+		g.Pause()
 	}
 }
