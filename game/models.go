@@ -98,7 +98,7 @@ func (e *Eel) Move() error {
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
 
 		var cDir controller.Direction
-		if e.Game.Config.DemoMode && e.ControlDir == controller.Dir_Neutral {
+		if e.Game.DemoMode && e.ControlDir == controller.Dir_Neutral {
 			switch rand.N(4) {
 			case 0:
 				cDir = controller.Dir_North

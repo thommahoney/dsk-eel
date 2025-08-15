@@ -25,6 +25,7 @@ type Game struct {
 	Chromatik    *Chromatik
 	Config       *config.Config
 	Controller   *controller.Controller
+	DemoMode     bool // actually respected, Config.DemoMode is intention
 	Eel          *Eel
 	Food         *Food
 	MoverTicker  *time.Ticker
@@ -67,6 +68,9 @@ func (g *Game) Run() {
 
 	g.Eel = NewEel(g)
 	g.Food = NewFood(g)
+
+	// reset demo mode to configured value
+	g.DemoMode = g.Config.DemoMode
 
 	var wg sync.WaitGroup
 	g.QuitChan = make(chan struct{})
@@ -172,6 +176,12 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 func (g *Game) HandleControllerState(state controller.ControllerState) {
 	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
 
+	if g.DemoMode {
+		// we have a contender!
+		g.Config.Logger.Info("HandleControllerState setting DemoMode = false")
+		g.DemoMode = false
+	}
+
 	g.Eel.ControlDir = state.Direction
 
 	// special case for all buttons held (black is drawn as a rainbow)
@@ -192,7 +202,7 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 		// No-Op
 		return
 	}
-	
+
 	// @todo add back an easter egg for multiple buttons pressed
 
 	for bs, addr := range buttonToOSCAddress {
