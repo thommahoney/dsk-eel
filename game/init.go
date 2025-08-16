@@ -12,6 +12,12 @@ func (g *Game) Init() error {
 	}
 	g.Chromatik = chromatik
 
+	ableton, err := InitAbleton(g.Config)
+	if err != nil {
+		return err
+	}
+	g.Ableton = ableton
+
 	g.Segments = InitSegments()
 
 	return nil

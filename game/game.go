@@ -21,6 +21,7 @@ const (
 
 // Tracks game state
 type Game struct {
+	Ableton      *Ableton
 	Brightness   float64
 	Chromatik    *Chromatik
 	Config       *config.Config
@@ -75,6 +76,8 @@ func (g *Game) Run() {
 	var wg sync.WaitGroup
 	g.QuitChan = make(chan struct{})
 
+	g.Ableton.FireScene(0)
+
 	wg.Add(1)
 	go g.Mover(&wg)
 
@@ -86,7 +89,7 @@ func (g *Game) Run() {
 
 func (g *Game) GameOver() {
 	g.Config.Logger.Info("GameOver")
-	// @todo trigger sound!
+	g.Ableton.FireScene(7)
 	close(g.QuitChan)
 }
 

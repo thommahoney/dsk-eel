@@ -84,7 +84,7 @@ func (e *Eel) Tail() *Point {
 
 func (e *Eel) Eat() {
 	e.Growth += GrowthIncrement
-	// @todo trigger sound!
+	e.Game.Ableton.FireClip(6, rand.Int32N(8)+1)
 }
 
 func (e *Eel) Move() error {
