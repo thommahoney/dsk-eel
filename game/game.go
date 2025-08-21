@@ -205,15 +205,22 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 
 	// @todo add back an easter egg for multiple buttons pressed
 
-	for bs, addr := range buttonToOSCAddress {
-		val := float32(0.0)
-		if bs == status {
-			val = 1.0
-		}
+	buttonIndex += 1
+	if buttonIndex >= 2 {
+		buttonIndex = 0
+	}
 
-		err := g.Chromatik.OscSend(addr, val)
-		if err != nil {
-			g.Config.Logger.Error("error handling button press", "error", err)
+	for bs, addrs := range buttonToOSCAddress {
+		for idx, a := range addrs {
+			val := float32(0.0)
+			if bs == status && (idx == buttonIndex || status == controller.Btn_White) {
+				val = 1.0
+			}
+
+			err := g.Chromatik.OscSend(a, val)
+			if err != nil {
+				g.Config.Logger.Error("error handling button press", "error", err)
+			}
 		}
 	}
 

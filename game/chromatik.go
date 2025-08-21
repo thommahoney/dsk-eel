@@ -58,13 +58,14 @@ func (c *Chromatik) ArtNetSend(bytes []byte) (int, error) {
 	return c.ArtNetConnection.WriteTo(bytes, c.ArtNetNode)
 }
 
-var buttonToOSCAddress = map[controller.ButtonStatus]string{
-	controller.Btn_Red:    "/lx/mixer/channel/1/fader",
-	controller.Btn_Green:  "/lx/mixer/channel/2/fader",
-	controller.Btn_Blue:   "",
-	controller.Btn_Yellow: "",
-	controller.Btn_White:  "/lx/mixer/channel/3/fader",
-	controller.Btn_None:   "",
+var buttonIndex = 0;
+var buttonToOSCAddress = map[controller.ButtonStatus][]string{
+	controller.Btn_Red:    {"/lx/mixer/channel/1/fader", "/lx/mixer/channel/2/fader"},
+	controller.Btn_Green:  {"/lx/mixer/channel/3/fader", "/lx/mixer/channel/4/fader"},
+	controller.Btn_Blue:   {"/lx/mixer/channel/5/fader", "/lx/mixer/channel/6/fader"},
+	controller.Btn_Yellow: {"/lx/mixer/channel/7/fader", "/lx/mixer/channel/8/fader"},
+	controller.Btn_White:  {"/lx/mixer/channel/9/fader"},
+	// controller.Btn_None:   {},
 }
 
 func (c *Chromatik) OscSend(address string, value float32) error {
