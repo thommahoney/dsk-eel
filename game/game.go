@@ -218,6 +218,33 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 			val := float32(0.0)
 			if bs == status && (idx == buttonIndex || status == controller.Btn_White) {
 				val = 1.0
+
+				if bs == controller.Btn_White { // If White is pressed, we're in Eel game mode, so no swatch (color palette) OSC message need be sent. Exit this inner for loop.
+					break
+				}
+				else {
+					var val_str = ""
+					if bs == controller.Btn_Red {
+						val_str = "red"
+					}
+					else if bs == controller.Btn_Green {
+						val_str = "green"
+					}
+					else if bs == controller.Btn_Blue {
+						val_str = "blue"
+					}
+					else if bs == controller.Btn_Yellow {
+						val_str = "yellow"
+					}
+					else { // Something bad happened, we should not be here, pls call Mom
+						break
+					}
+
+					err := g.Chromatik.OscSend_swatch(val_str)
+					if err != nil {
+						g.Config.Logger.Error("error handling button press", "error", err)
+					}
+				}
 			}
 
 			err := g.Chromatik.OscSend(a, val)

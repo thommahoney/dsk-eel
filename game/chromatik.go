@@ -83,3 +83,19 @@ func (c *Chromatik) OscSend(address string, value float32) error {
 
 	return nil
 }
+
+func (c *Chromatik) OscSend_swatch(value string) error {
+	if value == "" { // should never happen, tbh
+		return nil
+	}
+
+	msg := osc.NewMessage("/lx/palette/swatch/label")
+	msg.Append(value)
+
+	err := c.OscClient.Send(msg)
+	if err != nil {
+		return fmt.Errorf("failed to send OSC message: %s", err)
+	}
+
+	return nil
+}
