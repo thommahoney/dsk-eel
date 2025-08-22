@@ -240,21 +240,22 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 		g.Pause()
 	}
 
-	var val_str = ""
+	var swatch int
 	switch status {
 	case controller.Btn_Red:
-		val_str = "red"
+		swatch = 1
 	case controller.Btn_Green:
-		val_str = "green"
+		swatch = 2
 	case controller.Btn_Blue:
-		val_str = "blue"
+		swatch = 3
 	case controller.Btn_Yellow:
-		val_str = "yellow"
+		swatch = 4
 	default:
 		// multiple buttons pressed?
+		swatch = 1
 	}
 
-	err := g.Chromatik.OscSend_swatch(val_str)
+	err := g.Chromatik.OscSend_swatch(swatch)
 	if err != nil {
 		g.Config.Logger.Error("error sending swatch OSC:", "error", err)
 	}
