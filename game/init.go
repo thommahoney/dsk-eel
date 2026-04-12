@@ -19,6 +19,7 @@ func (g *Game) Init() error {
 	g.Ableton = ableton
 
 	g.Segments = InitSegments()
+	g.initDrawBuffers()
 
 	return nil
 }
