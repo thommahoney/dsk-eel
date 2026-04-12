@@ -34,6 +34,17 @@ type Game struct {
 	PrimaryColor Color
 	QuitChan     chan struct{}
 	Segments     [SegmentCount]*Segment
+
+	// Per-frame render state owned exclusively by the Mover goroutine.
+	// frame is the dense pixel buffer; frameSet is an eel-body occupancy
+	// bitmap used for O(1) self-collision detection during drawBody.
+	// artnetBufs holds one pre-built ArtDMX packet per universe — the
+	// 18-byte header is populated once in Init and only the sequence byte
+	// (offset 12) and DMX payload (offsets 18..529) are rewritten per frame.
+	frame               [SegmentCount * SegmentLength]Color
+	frameSet            [SegmentCount * SegmentLength]bool
+	artnetBufs          [7][530]byte
+	brightnessIncrement float64
 }
 
 func NewGame(config *config.Config) (*Game, error) {
@@ -69,6 +80,8 @@ func (g *Game) Run() {
 
 	g.Eel = NewEel(g)
 	g.Food = NewFood(g)
+	g.Brightness = 1.0
+	g.brightnessIncrement = -0.05
 
 	// reset demo mode to configured value
 	g.DemoMode = g.Config.DemoMode
@@ -80,9 +93,6 @@ func (g *Game) Run() {
 
 	wg.Add(1)
 	go g.Mover(&wg)
-
-	wg.Add(1)
-	go g.BrightnessOscillator(&wg)
 
 	wg.Wait()
 }
@@ -104,7 +114,10 @@ func (g *Game) Resume() {
 	g.Paused = false
 }
 
-// calls Eel.Move() on an interval
+// Mover calls Eel.Move() on an interval. It also advances the breathing
+// brightness oscillation inline — the pre-refactor second goroutine for
+// this purpose was redundant since nothing between Mover ticks ever
+// observed g.Brightness, and it introduced a data race on that field.
 func (g *Game) Mover(wg *sync.WaitGroup) {
 	defer wg.Done()
 	g.MoverTicker = time.NewTicker(MovementFrequency)
@@ -113,40 +126,23 @@ func (g *Game) Mover(wg *sync.WaitGroup) {
 	for {
 		select {
 		case <-g.MoverTicker.C:
+			g.Brightness += g.brightnessIncrement
+			if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
+				g.brightnessIncrement = -g.brightnessIncrement
+			}
+
 			err := g.Eel.Move()
 			if err != nil {
 				g.Config.Logger.Info("Mover sent game over", "err", err)
+				g.Brightness = 1.0
 				g.GameOver()
+				wg.Add(1)
+				go g.GameOverAnimation(wg)
 				return
 			}
 
 		case <-g.QuitChan:
 			g.Config.Logger.Info("Mover received quit")
-			return
-		}
-	}
-}
-
-func (g *Game) BrightnessOscillator(wg *sync.WaitGroup) {
-	defer wg.Done()
-	ticker := time.NewTicker(MovementFrequency)
-	defer ticker.Stop()
-
-	increment := -0.05
-
-	for {
-		select {
-		case <-ticker.C:
-			g.Brightness += increment
-			if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
-				increment = increment * -1
-			}
-
-		case <-g.QuitChan:
-			g.Config.Logger.Info("BrightnessOscillator received quit")
-			g.Brightness = 1.0
-			wg.Add(1)
-			go g.GameOverAnimation(wg)
 			return
 		}
 	}
@@ -167,12 +163,12 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 		}
 
 		g.Eel.Shrink()
-		eelBody, _ := g.Eel.Pixels(g.Brightness, true)
-		if len(eelBody) == 0 {
+		g.resetFrame()
+		if !g.Eel.drawBodyGameOver(g.Brightness) {
 			g.Brightness = 1.0
 			return
 		}
-		g.Draw(eelBody)
+		g.Draw()
 	}
 }
 
