@@ -1,0 +1,112 @@
+#!/bin/sh
+# Run a command inside the dsk-eel development container.
+#
+#   dev/run                  interactive shell
+#   dev/run check            build, vet, lint, gofmt and race tests (dev/check)
+#   dev/run smoke            race-instrumented demo run, no network (dev/smoke)
+#   dev/run go test ./...    any other command
+#   dev/run --rebuild ...    first rebuild the image from scratch, pulling a
+#                            newer base image
+#
+# The checkout this script lives in is mounted at /src, and the command starts
+# in the container directory that matches the caller's. The Go build and
+# module caches live in the dsk-eel-dev-cache volume, so nothing but a
+# container runtime is needed on the host.
+#
+# Two things differ from running the command directly:
+#   - Host environment variables are not forwarded. Set them inside:
+#       dev/run env GOMAXPROCS=2 go test ./...
+#   - stdin is passed through, so in a `while read` loop redirect it:
+#       dev/run go list "$pkg" </dev/null
+#
+# Environment:
+#   GO_VERSION           golang image version to use instead of the
+#                        Dockerfile default, e.g. GO_VERSION=1.23
+#   DOCKER               container CLI to call (default: docker)
+#   DSK_EEL_DOCKER_ARGS  extra `docker run` arguments, split on spaces. On a
+#                        Linux host with the hardware attached, for example:
+#                        "--network host --device /dev/hidraw3"
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
+docker=${DOCKER:-docker}
+
+rebuild=0
+build_flags=
+if [ "${1:-}" = "--rebuild" ]; then
+	rebuild=1
+	build_flags="--pull --no-cache"
+	shift
+fi
+
+if ! command -v "$docker" >/dev/null 2>&1; then
+	echo "dev/run: '$docker' not found; install a container runtime or set DOCKER" >&2
+	exit 127
+fi
+
+# The image is tagged with the Dockerfile's checksum, so it is rebuilt when
+# the Dockerfile changes, and checkouts with different Dockerfiles (branches,
+# worktrees) never share or overwrite each other's image.
+rev=$(cksum <"$root/dev/Dockerfile" | awk '{ print $1 "-" $2 }')
+image=dsk-eel-dev:${GO_VERSION:+go$GO_VERSION-}$rev
+if [ "$rebuild" = 1 ] || ! "$docker" image inspect "$image" >/dev/null 2>&1; then
+	# Build output goes to stderr so `dev/run cmd | ...` only sees cmd's stdout.
+	# If a concurrent dev/run tagged the same image first, this build's own
+	# tagging step can fail; that is fine as long as the image now exists.
+	# shellcheck disable=SC2086 # $build_flags is split on purpose
+	"$docker" build $build_flags ${GO_VERSION:+--build-arg "GO_VERSION=$GO_VERSION"} \
+		-t "$image" "$root/dev" >&2 ||
+		"$docker" image inspect "$image" >/dev/null
+fi
+
+network=
+case "${1:-}" in
+"") set -- bash ;;
+check)
+	shift
+	set -- sh /src/dev/check "$@"
+	;;
+smoke)
+	# The game sends OSC to a fixed LAN address; keep a test run off the network.
+	shift
+	set -- sh /src/dev/smoke "$@"
+	network="--network none"
+	;;
+esac
+
+# Start in the container directory matching the host one, so that
+# `cd game && ../dev/run go test .` tests game and not the root package.
+# Called from outside this checkout (another worktree, say), the command
+# still runs here, which is worth saying out loud.
+here=$(pwd -P)
+case $here/ in
+"$root"/*) workdir=/src${here#"$root"} ;;
+*)
+	workdir=/src
+	echo "dev/run: running in $root" >&2
+	;;
+esac
+
+tty=
+if [ -t 0 ] && [ -t 1 ]; then
+	tty=-t
+fi
+
+# A checkout the container runtime cannot see is mounted as an empty /src,
+# and every command then fails with an unrelated-looking error.
+# shellcheck disable=SC2016 # expanded by the shell in the container
+guard='[ -e /src/dev/run ] || {
+	echo "dev/run: $0 is empty inside the container. It must be under a directory the container runtime shares with its VM (Colima: only \$HOME)." >&2
+	exit 125
+}
+exec "$@"'
+
+# TINI_KILL_PROCESS_GROUP: without a TTY, Ctrl-C reaches only the direct child
+# of the container's init, and `go test` and `go run` ignore it on purpose.
+# shellcheck disable=SC2086 # $tty, $network and DSK_EEL_DOCKER_ARGS are split on purpose
+exec "$docker" run --rm --init -i $tty \
+	--user "$(id -u):$(id -g)" -e HOME=/tmp -e TINI_KILL_PROCESS_GROUP=1 \
+	-v "$root:/src" -w "$workdir" \
+	-v dsk-eel-dev-cache:/cache \
+	$network ${DSK_EEL_DOCKER_ARGS:-} \
+	"$image" sh -c "$guard" "$root" "$@"
