@@ -1,0 +1,40 @@
+#!/bin/sh
+# Race-instrumented smoke run of the game loop. Runs inside the dev container:
+#
+#   dev/run smoke [seconds]
+#
+# Builds the binary with the race detector and runs it in demo mode without a
+# joystick. The game never exits by itself, so surviving until the time limit
+# is the pass; a data race report or a crash is the failure.
+#
+# dev/run starts this container without a network, because the game sends OSC
+# to a fixed Ableton address. The module cache must therefore already be
+# populated, which `dev/run check` or `dev/run go mod download` does.
+#
+# Only the game loop is exercised. With --nojoy the joystick goroutine never
+# starts, so races between it and the game loop do not show up here.
+set -u
+
+cd -- "$(dirname -- "$0")/.." || exit 2
+
+secs=${1:-5}
+tmp=$(mktemp -d) || exit 2
+
+echo "==> go build -race" >&2
+if ! go build -race -o "$tmp/dsk-eel" .; then
+	echo "dev/smoke: build failed. This container has no network; if modules are missing, run 'dev/run go mod download' first." >&2
+	exit 1
+fi
+
+echo "==> demo run for ${secs}s" >&2
+GORACE=halt_on_error=1 timeout "$secs" "$tmp/dsk-eel" \
+	--nojoy --demo --chromatik 127.0.0.1 -v >"$tmp/log" 2>&1
+status=$?
+
+if [ "$status" -eq 124 ]; then
+	echo "==> smoke passed: ran ${secs}s with no race report" >&2
+	exit 0
+fi
+tail -n 60 "$tmp/log" >&2
+echo "==> smoke FAILED: exit status $status (66 means the race detector fired)" >&2
+exit 1
