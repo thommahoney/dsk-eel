@@ -1,0 +1,45 @@
+#!/bin/sh
+# The standard verification suite. Runs inside the dev container:
+#
+#   dev/run check
+#
+# Every step runs even if an earlier one fails, so one pass shows everything
+# that is wrong. The last line of output names the steps that failed, and the
+# exit status is non-zero if any did.
+set -u
+
+if [ $# -gt 0 ]; then
+	echo "dev/check: takes no arguments (it always checks ./...)" >&2
+	exit 2
+fi
+cd -- "$(dirname -- "$0")/.." || exit 2
+
+failed=
+step() {
+	echo "==> $*" >&2
+	"$@" || failed="$failed [$*]"
+}
+
+gofmt_clean() {
+	# `gofmt -l .` would also walk dot-directories (other checkouts can live
+	# in one), testdata and vendor, all of which ./... skips.
+	unformatted=$(find . \( -name '.?*' -o -name '_*' -o -name testdata -o -name vendor \) -prune \
+		-o -name '*.go' -exec gofmt -l {} +) || return 1
+	if [ -n "$unformatted" ]; then
+		echo "not gofmt-formatted:" >&2
+		echo "$unformatted" >&2
+		return 1
+	fi
+}
+
+step go build ./...
+step go vet ./...
+step staticcheck ./...
+step gofmt_clean
+step go test -race -count=1 ./...
+
+if [ -n "$failed" ]; then
+	echo "==> FAILED:$failed" >&2
+	exit 1
+fi
+echo "==> all checks passed" >&2

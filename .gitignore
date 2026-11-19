@@ -1,1 +1,5 @@
 dsk-eel
+# test binaries and profiles written by go test -c / -cpuprofile / -memprofile
+*.test
+*.out
+*.prof
