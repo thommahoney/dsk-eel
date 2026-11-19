@@ -3,79 +3,63 @@ package game
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/jsimonetti/go-artnet/packet"
 )
 
-// TestArtDMXWireFormatMatches ensures the hand-built ArtDMX buffer produced
-// by initDrawBuffers + Draw emits byte-for-byte identical wire output to
-// what the pre-refactor code did via go-artnet's reflection-based
-// ArtDMXPacket.MarshalBinary. This pins the wire contract so the
-// allocation-avoidance refactor can't silently change what goes out over
-// UDP to Chromatik.
-func TestArtDMXWireFormatMatches(t *testing.T) {
-	// Build a deterministic frame: index i -> Color{i, i^0x55, i^0xAA}.
-	var g Game
-	g.initDrawBuffers()
-	for i := range g.frame {
-		g.frame[i] = Color{byte(i), byte(i ^ 0x55), byte(i ^ 0xAA)}
-	}
+// TestDrawSendsArtDMX sends frames through Draw to a loopback socket and
+// compares each datagram with what go-artnet's ArtDMXPacket.MarshalBinary
+// produces for the same pixels, which is how packets were built before
+// Draw wrote them by hand.
+//
+// The second frame has different content in every pixel, so bytes left
+// over from the first frame in the reused buffers would show up.
+func TestDrawSendsArtDMX(t *testing.T) {
+	g, sink := newTestGame(t)
 
-	for univ := 0; univ < universeCount; univ++ {
-		max := pixelsPerFullUniv
-		if univ == universeCount-1 {
-			max = pixelsInLastUniv
+	for round := 0; round < 2; round++ {
+		for i := range g.frame {
+			g.frame[i] = Color{byte(i + round*3), byte(i>>8) | byte(0x80>>round), byte(i*31 + 7 + round)}
 		}
+		g.Draw()
 
-		// What the pre-refactor code produced:
-		var data [512]byte
-		for i := 0; i < max; i++ {
-			p := univ*pixelsPerFullUniv + i
-			data[i*RGB+0] = g.frame[p][0]
-			data[i*RGB+1] = g.frame[p][1]
-			data[i*RGB+2] = g.frame[p][2]
-		}
-		pkt := &packet.ArtDMXPacket{
-			Sequence: uint8(univ), // matches original local `sequence := 0; sequence++`
-			SubUni:   uint8(univ),
-			Net:      0,
-			Data:     data,
-		}
-		want, err := pkt.MarshalBinary()
-		if err != nil {
-			t.Fatalf("univ %d MarshalBinary: %v", univ, err)
-		}
-
-		// What the new code produces for this universe.
-		buf := &g.artnetBufs[univ]
-		base := univ * pixelsPerFullUniv
-		for i := 0; i < max; i++ {
-			c := g.frame[base+i]
-			off := artnetDataOffset + i*RGB
-			buf[off+0] = c[0]
-			buf[off+1] = c[1]
-			buf[off+2] = c[2]
-		}
-		if max < pixelsPerFullUniv {
-			tailStart := artnetDataOffset + max*RGB
-			tailEnd := artnetDataOffset + artnetDMXPayloadLen
-			for i := tailStart; i < tailEnd; i++ {
-				buf[i] = 0
+		for univ := 0; univ < testUniverses; univ++ {
+			got := sink.datagram(time.Second)
+			if got == nil {
+				t.Fatalf("frame %d: datagram %d of %d was not sent", round, univ, testUniverses)
 			}
-		}
-		got := buf[:]
 
-		if !bytes.Equal(got, want) {
-			// Find the first differing offset for a readable failure.
-			var diffAt = -1
-			for i := 0; i < len(want) && i < len(got); i++ {
-				if got[i] != want[i] {
-					diffAt = i
-					break
+			var data [512]byte
+			count := testFullUniv
+			if univ == testUniverses-1 {
+				count = testLastUniv
+			}
+			for i := 0; i < count; i++ {
+				c := g.frame[univ*testFullUniv+i]
+				data[i*3+0], data[i*3+1], data[i*3+2] = c[0], c[1], c[2]
+			}
+			want, err := (&packet.ArtDMXPacket{
+				Sequence: uint8(univ),
+				SubUni:   uint8(univ),
+				Data:     data,
+			}).MarshalBinary()
+			if err != nil {
+				t.Fatalf("MarshalBinary: %v", err)
+			}
+			if len(want) != testPacketLen {
+				t.Fatalf("reference packet is %d bytes, want %d", len(want), testPacketLen)
+			}
+
+			if !bytes.Equal(got, want) {
+				at := 0
+				for at < len(got) && at < len(want) && got[at] == want[at] {
+					at++
 				}
+				t.Fatalf("frame %d universe %d: datagram differs from go-artnet at byte %d (%d bytes sent, want %d)",
+					round, univ, at, len(got), len(want))
 			}
-			t.Errorf("univ %d: wire bytes differ at offset %d (len got=%d, want=%d)\n got=%x\nwant=%x",
-				univ, diffAt, len(got), len(want), got[:min(32, len(got))], want[:min(32, len(want))])
 		}
+		sink.expectNoFrame()
 	}
 }

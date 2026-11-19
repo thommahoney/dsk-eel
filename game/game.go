@@ -35,15 +35,20 @@ type Game struct {
 	QuitChan     chan struct{}
 	Segments     [SegmentCount]*Segment
 
-	// Per-frame render state owned exclusively by the Mover goroutine.
-	// frame is the dense pixel buffer; frameSet is an eel-body occupancy
-	// bitmap used for O(1) self-collision detection during drawBody.
-	// artnetBufs holds one pre-built ArtDMX packet per universe — the
-	// 18-byte header is populated once in Init and only the sequence byte
-	// (offset 12) and DMX payload (offsets 18..529) are rewritten per frame.
-	frame               [SegmentCount * SegmentLength]Color
-	frameSet            [SegmentCount * SegmentLength]bool
-	artnetBufs          [7][530]byte
+	// Render state. Only one goroutine touches it at a time: Mover while a
+	// game is being played, then GameOverAnimation, which Mover starts as
+	// its last act. The joystick goroutine never does.
+	//
+	// frame is the pixel buffer for the frame being built. frameSet marks
+	// the pixels the eel body occupies in that frame; it finds
+	// self-collisions and food hits without searching the body.
+	// artnetBufs holds one ArtDMX packet per universe. The headers are
+	// filled in once by initDrawBuffers and Draw rewrites only pixel bytes.
+	frame      [SegmentCount * SegmentLength]Color
+	frameSet   [SegmentCount * SegmentLength]bool
+	artnetBufs [universeCount][artnetPacketLen]byte
+
+	// brightnessIncrement is the step Mover applies to Brightness each tick.
 	brightnessIncrement float64
 }
 
@@ -114,10 +119,8 @@ func (g *Game) Resume() {
 	g.Paused = false
 }
 
-// Mover calls Eel.Move() on an interval. It also advances the breathing
-// brightness oscillation inline — the pre-refactor second goroutine for
-// this purpose was redundant since nothing between Mover ticks ever
-// observed g.Brightness, and it introduced a data race on that field.
+// Mover calls Eel.Move() on an interval and steps the breathing brightness
+// before each move. When the eel dies it hands over to GameOverAnimation.
 func (g *Game) Mover(wg *sync.WaitGroup) {
 	defer wg.Done()
 	g.MoverTicker = time.NewTicker(MovementFrequency)

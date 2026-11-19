@@ -7,9 +7,8 @@ import (
 	"github.com/thommahoney/dsk-eel/controller"
 )
 
-// initialBodyCap is the starting capacity allocated for Eel.Body. Body
-// mutation in Move shifts in place, so once cap is large enough the body
-// slice never re-allocates. 256 comfortably handles the longest games.
+// initialBodyCap is the capacity Eel.Body starts with. Move shifts the body
+// in place, so the slice is not reallocated until the eel outgrows this.
 const initialBodyCap = 256
 
 type Direction int
@@ -34,9 +33,11 @@ type Eel struct {
 	TravelDir  Direction
 }
 
-func (g *Game) NewBody() (*Segment, []*Point) {
+// NewBody returns GrowthIncrement points in a row on a random segment, in a
+// slice with room for capacity points.
+func (g *Game) NewBody(capacity int) (*Segment, []*Point) {
 	startingSegment := g.RandomSegment()
-	body := make([]*Point, 0, initialBodyCap)
+	body := make([]*Point, 0, capacity)
 	start := Max(rand.N(SegmentLength), GrowthIncrement-1)
 	for i := start; i > start-GrowthIncrement; i-- {
 		body = append(body, &Point{Segment: startingSegment, Position: i})
@@ -45,7 +46,7 @@ func (g *Game) NewBody() (*Segment, []*Point) {
 }
 
 func NewEel(g *Game) *Eel {
-	segment, body := g.NewBody()
+	segment, body := g.NewBody(initialBodyCap)
 	return &Eel{
 		Body:       body,
 		ControlDir: controller.Dir_Neutral,
@@ -57,13 +58,14 @@ func NewEel(g *Game) *Eel {
 
 // @todo don't spawn food on top of eel
 func NewFood(g *Game) *Food {
-	_, body := g.NewBody()
+	// Food only ever shrinks, so it needs no spare capacity.
+	_, body := g.NewBody(GrowthIncrement)
 
 	return &Food{
 		Body:  body,
 		Game:  g,
 		Fresh: true,
-		Hue:   rand.Float64()*360.0,
+		Hue:   rand.Float64() * 360.0,
 	}
 }
 
@@ -137,15 +139,10 @@ func (e *Eel) Move() error {
 		}
 	}
 
-	// Advance the body in place. Body.cap is pre-allocated in NewBody, so
-	// normal growth stays on the same backing array; only an extremely long
-	// game would hit the append path and grow the slice.
+	// Advance the body in place. NewEel gave the slice spare capacity, so
+	// growing only reallocates once the eel is longer than initialBodyCap.
 	if e.Growth > 0 {
-		if len(e.Body) < cap(e.Body) {
-			e.Body = e.Body[:len(e.Body)+1]
-		} else {
-			e.Body = append(e.Body, nil)
-		}
+		e.Body = append(e.Body, nil)
 		copy(e.Body[1:], e.Body[:len(e.Body)-1])
 		e.Body[0] = nextPoint
 		e.Growth--
@@ -158,20 +155,25 @@ func (e *Eel) Move() error {
 		e.Body[0] = nextPoint
 	}
 
-	// Food collision: any eel body pixel touching any food pixel counts,
-	// matching the pre-refactor hasCommonKeys semantics. Food and body
-	// are both small so this is negligible work.
-	food := e.Game.Food
-	for _, bp := range e.Body {
-		bIdx := bp.Segment.Offset + bp.Position
-		hit := false
-		for _, fp := range food.Body {
-			if fp.Segment.Offset+fp.Position == bIdx {
-				hit = true
-				break
-			}
-		}
-		if hit {
+	// Build the frame in g.frame. Later layers paint over earlier ones:
+	// turn signals, then the eel, then the food.
+	g := e.Game
+	g.resetFrame()
+	e.drawTurnSignals(nextHop)
+
+	// drawBody also finds self-collisions. That has to happen before the
+	// food is looked at, so an eel that dies on this tick does not eat.
+	if err := e.drawBody(); err != nil {
+		return err
+	}
+
+	// The eel bites the food if any part of its body is on a food pixel.
+	// The food is painted as it was before this tick's bite: Chomp only
+	// reslices Body, so foodBody still includes the pixel being eaten.
+	food := g.Food
+	foodBody := food.Body
+	for _, fp := range foodBody {
+		if g.frameSet[fp.Segment.Offset+fp.Position] {
 			if food.IsFresh() {
 				e.Eat()
 			}
@@ -179,17 +181,8 @@ func (e *Eel) Move() error {
 			break
 		}
 	}
+	food.draw(foodBody)
 
-	// Render the frame directly into g.frame. Order matters: turn signals
-	// go down first so eel/food can paint over them (matching the old
-	// maps.Copy precedence of food > eel > turn signals).
-	g := e.Game
-	g.resetFrame()
-	e.drawTurnSignals(nextHop)
-	if err := e.drawBody(); err != nil {
-		return err
-	}
-	g.Food.draw()
 	g.Draw()
 
 	return nil
@@ -256,14 +249,13 @@ func (e *Eel) drawBody() error {
 	if bodyLength == 0 {
 		return nil
 	}
-	hueStep := 360.0 / float64(bodyLength)
 	for i, point := range e.Body {
 		idx := point.Segment.Offset + point.Position
 		if g.frameSet[idx] {
 			return fmt.Errorf("eel body overlaps")
 		}
 		g.frameSet[idx] = true
-		g.frame[idx] = hsvToRGB(float64(i)*hueStep, 1.0, 1.0)
+		g.frame[idx] = hsvToRGB(float64(i)*360.0/float64(bodyLength), 1.0, 1.0)
 	}
 	return nil
 }
@@ -278,13 +270,12 @@ func (e *Eel) drawBodyGameOver(brightness float64) bool {
 	if bodyLength == 0 {
 		return false
 	}
-	hueStep := 360.0 / float64(bodyLength)
 	for i, point := range e.Body {
 		idx := point.Segment.Offset + point.Position
 		if i == 0 || i == bodyLength-1 {
 			g.frame[idx] = White
 		} else {
-			g.frame[idx] = hsvToRGB(float64(i)*hueStep, 1.0, brightness)
+			g.frame[idx] = hsvToRGB(float64(i)*360.0/float64(bodyLength), 1.0, brightness)
 		}
 	}
 	return true
@@ -308,12 +299,11 @@ type Food struct {
 	Hue   float64
 }
 
-// draw paints the food pixels into f.Game.frame. Food is drawn last so
-// it overwrites any eel body or turn signal pixels that share the same
-// index, matching the pre-refactor precedence.
-func (f *Food) draw() {
+// draw paints the given food points into the frame, over whatever is
+// already there.
+func (f *Food) draw(body []*Point) {
 	color := hsvToRGB(0.0, 0.0, f.Game.Brightness)
-	for _, point := range f.Body {
+	for _, point := range body {
 		f.Game.frame[point.Segment.Offset+point.Position] = color
 	}
 }
