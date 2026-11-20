@@ -108,7 +108,8 @@ func (e *Eel) Tail() *Point {
 
 func (e *Eel) Eat() {
 	e.Growth += GrowthIncrement
-	e.Game.Ableton.FireClip(6, rand.Int32N(8)+1)
+	// One of the first eight clips on track 6, at random.
+	e.Game.Ableton.FireClip(6, rand.Int32N(8))
 }
 
 func (e *Eel) Move() error {

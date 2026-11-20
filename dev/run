@@ -68,7 +68,7 @@ check)
 	set -- sh /src/dev/check "$@"
 	;;
 smoke)
-	# The game sends OSC to a fixed LAN address; keep a test run off the network.
+	# Keep a test run off the network whatever flags it is given.
 	shift
 	set -- sh /src/dev/smoke "$@"
 	network="--network none"

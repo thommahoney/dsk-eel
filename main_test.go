@@ -91,3 +91,27 @@ func TestListenFlag(t *testing.T) {
 		t.Errorf("--listen 10.0.0.0/24 gave %q", cfg.ListenSubnet)
 	}
 }
+
+// TestAbletonFlag checks the three forms of --ableton: left out or given
+// empty, the address is empty, which leaves Ableton off; given, it is the
+// address to send to.
+func TestAbletonFlag(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"not given", nil, ""},
+		{"given", []string{"--ableton", "10.0.0.7:9000"}, "10.0.0.7:9000"},
+		{"empty", []string{"--ableton", ""}, ""},
+	} {
+		flags := pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError)
+		cfg, err := parseFlags(flags, c.args)
+		if err != nil {
+			t.Fatalf("%s: parseFlags: %v", c.name, err)
+		}
+		if cfg.AbletonDest != c.want {
+			t.Errorf("%s: the Ableton address is %q, want %q", c.name, cfg.AbletonDest, c.want)
+		}
+	}
+}
