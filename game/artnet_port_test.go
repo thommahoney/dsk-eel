@@ -10,9 +10,9 @@ import (
 
 // loopbackChromatik calls InitChromatik with every address on loopback and
 // OSC addressed to oscPort. InitChromatik binds the fixed Art-Net port, so
-// the socket is closed again when the test ends. If something else on this
-// machine already has that port, which says nothing about the code, the
-// test is skipped.
+// its sockets are closed again when the test ends. If something else on
+// this machine already has that port, which says nothing about the code,
+// the test is skipped.
 func loopbackChromatik(t *testing.T, oscPort int) *Chromatik {
 	t.Helper()
 	c, err := InitChromatik(&config.Config{
@@ -27,7 +27,10 @@ func loopbackChromatik(t *testing.T, oscPort int) *Chromatik {
 		}
 		t.Fatalf("InitChromatik: %v", err)
 	}
-	t.Cleanup(func() { c.ArtNetConnection.Close() })
+	t.Cleanup(func() {
+		c.ArtNetConnection.Close()
+		c.OscClient.Close()
+	})
 	return c
 }
 

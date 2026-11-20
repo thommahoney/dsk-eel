@@ -3,9 +3,9 @@ package game
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
-	"github.com/hypebeast/go-osc/osc"
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
 )
@@ -13,7 +13,7 @@ import (
 type Chromatik struct {
 	ArtNetConnection *net.UDPConn
 	ArtNetNode       *net.UDPAddr
-	OscClient        *osc.Client
+	OscClient        *OscClient
 }
 
 func InitChromatik(c *config.Config) (*Chromatik, error) {
@@ -86,7 +86,18 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 		c.Logger.Info("Art-Net socket open", "from", localAddr.String(), "to", node.String())
 	}
 
-	oscClient := osc.NewClient(c.OscDest, c.OscPort)
+	// Chromatik takes OSC on the machine it takes Art-Net on, unless
+	// --osc-dest says otherwise.
+	oscHost := c.OscDest
+	if oscHost == "" {
+		oscHost = c.ArtNetDest.String()
+	}
+	oscDest := net.JoinHostPort(oscHost, strconv.Itoa(c.OscPort))
+	oscClient, err := NewOscClient(oscDest)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("invalid OSC destination %q (--osc-dest, --osc-port): %s", oscDest, err)
+	}
 
 	return &Chromatik{ArtNetConnection: conn, ArtNetNode: node, OscClient: oscClient}, nil
 }
@@ -151,7 +162,6 @@ func (c *Chromatik) ArtNetSend(bytes []byte) (int, error) {
 	return c.ArtNetConnection.WriteTo(bytes, c.ArtNetNode)
 }
 
-var buttonIndex = 0
 var buttonToOSCAddress = map[controller.ButtonStatus][]string{
 	controller.Btn_Red:    {"/lx/mixer/channel/1/fader", "/lx/mixer/channel/2/fader"},
 	controller.Btn_Green:  {"/lx/mixer/channel/3/fader", "/lx/mixer/channel/4/fader"},
@@ -166,10 +176,7 @@ func (c *Chromatik) OscSend(address string, value float32) error {
 		return nil
 	}
 
-	msg := osc.NewMessage(address)
-	msg.Append(value)
-
-	err := c.OscClient.Send(msg)
+	err := c.OscClient.SendFloat(address, value)
 	if err != nil {
 		return fmt.Errorf("failed to send OSC message: %s", err)
 	}
@@ -178,10 +185,7 @@ func (c *Chromatik) OscSend(address string, value float32) error {
 }
 
 func (c *Chromatik) OscSend_swatch(swatch int) error {
-	msg := osc.NewMessage(fmt.Sprintf("/lx/palette/swatches/%d/recall", swatch))
-	msg.Append(float32(1.0))
-
-	err := c.OscClient.Send(msg)
+	err := c.OscClient.SendFloat(fmt.Sprintf("/lx/palette/swatches/%d/recall", swatch), 1.0)
 	if err != nil {
 		return fmt.Errorf("failed to send OSC swatch message: %s", err)
 	}
