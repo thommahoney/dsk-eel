@@ -172,12 +172,12 @@ func line(seg *Segment, from, to int) []*Point {
 func place(g *Game, seg, headPos, n int, brightness float64, foodSeg, foodFrom, foodTo int) {
 	s := g.Segments[seg]
 	g.Eel = &Eel{
-		Body:       line(s, headPos, headPos-n+1),
-		ControlDir: controller.Dir_Neutral,
-		Game:       g,
-		Segment:    s,
-		TravelDir:  Greater,
+		Body:      line(s, headPos, headPos-n+1),
+		Game:      g,
+		Segment:   s,
+		TravelDir: Greater,
 	}
+	g.controlDir.Store(controller.Dir_Neutral)
 	g.Food = &Food{Body: line(g.Segments[foodSeg], foodFrom, foodTo), Game: g, Fresh: true}
 	g.Brightness = brightness
 }

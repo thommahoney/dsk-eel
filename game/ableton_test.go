@@ -96,7 +96,6 @@ func TestGameOverFiresScene7(t *testing.T) {
 	g, _ := newTestGame(t)
 	a, conn := newTestAbleton(t)
 	g.Ableton = a
-	g.QuitChan = make(chan struct{})
 
 	g.GameOver()
 
