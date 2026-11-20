@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/hypebeast/go-osc/osc"
-	"github.com/jsimonetti/go-artnet/packet"
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
 )
@@ -42,8 +41,8 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 			c.ArtNetDest, ip, c.ListenSubnet)
 	}
 
-	node := &net.UDPAddr{IP: c.ArtNetDest, Port: packet.ArtNetPort}
-	localAddr := &net.UDPAddr{IP: ip, Port: packet.ArtNetPort}
+	node := &net.UDPAddr{IP: c.ArtNetDest, Port: artnetPort}
+	localAddr := &net.UDPAddr{IP: ip, Port: artnetPort}
 
 	conn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {

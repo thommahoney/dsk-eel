@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"testing"
 	"time"
-
-	"github.com/jsimonetti/go-artnet/packet"
 )
 
 // TestDrawSendsArtDMX sends frames through Draw to a loopback socket and
-// compares each datagram with what go-artnet's ArtDMXPacket.MarshalBinary
-// produces for the same pixels, which is how packets were built before
-// Draw wrote them by hand.
+// compares each datagram with the ArtDmx packet for the same pixels,
+// written out here from the Art-Net packet layout.
 //
 // The second frame has different content in every pixel, so bytes left
 // over from the first frame in the reused buffers would show up.
@@ -39,18 +36,9 @@ func TestDrawSendsArtDMX(t *testing.T) {
 				c := g.frame[univ*testFullUniv+i]
 				data[i*3+0], data[i*3+1], data[i*3+2] = c[0], c[1], c[2]
 			}
-			// Sequence is left at 0, which in Art-Net means the sender
-			// does not number its packets. Any other value that never
-			// changes could make a receiver drop frames as out of order.
-			want, err := (&packet.ArtDMXPacket{
-				SubUni: uint8(univ),
-				Data:   data,
-			}).MarshalBinary()
-			if err != nil {
-				t.Fatalf("MarshalBinary: %v", err)
-			}
+			want := wantArtDMX(univ, data)
 			if len(want) != testPacketLen {
-				t.Fatalf("reference packet is %d bytes, want %d", len(want), testPacketLen)
+				t.Fatalf("expected packet is %d bytes, want %d", len(want), testPacketLen)
 			}
 
 			if len(got) > 12 && got[12] != 0 {
@@ -61,10 +49,27 @@ func TestDrawSendsArtDMX(t *testing.T) {
 				for at < len(got) && at < len(want) && got[at] == want[at] {
 					at++
 				}
-				t.Fatalf("frame %d universe %d: datagram differs from go-artnet at byte %d (%d bytes sent, want %d)",
+				t.Fatalf("frame %d universe %d: datagram differs from the expected packet at byte %d (%d bytes sent, want %d)",
 					round, univ, at, len(got), len(want))
 			}
 		}
 		sink.expectNoFrame()
 	}
+}
+
+// wantArtDMX returns the ArtDmx packet Draw must send for one universe:
+// the 18-byte header from the Art-Net specification followed by the 512
+// DMX data bytes.
+func wantArtDMX(univ int, data [512]byte) []byte {
+	want := []byte{
+		'A', 'r', 't', '-', 'N', 'e', 't', 0, // ID
+		0x00, 0x50, // OpCode 0x5000 (ArtDmx), low byte first
+		0, 14, // protocol version 14, high byte first
+		0,          // Sequence: 0 means the sender does not number its packets
+		0,          // Physical
+		byte(univ), // SubUni: low 8 bits of the universe address
+		0,          // Net: high 7 bits of the universe address
+		0x02, 0x00, // data length 512, high byte first
+	}
+	return append(want, data[:]...)
 }

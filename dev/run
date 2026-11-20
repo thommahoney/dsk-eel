@@ -2,7 +2,8 @@
 # Run a command inside the dsk-eel development container.
 #
 #   dev/run                  interactive shell
-#   dev/run check            build, vet, lint, gofmt and race tests (dev/check)
+#   dev/run check            build, go.mod tidiness, vet, lint, gofmt and race
+#                            tests (dev/check)
 #   dev/run smoke            race-instrumented demo run, no network (dev/smoke)
 #   dev/run go test ./...    any other command
 #   dev/run --rebuild ...    first rebuild the image from scratch, pulling a
