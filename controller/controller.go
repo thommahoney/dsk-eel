@@ -239,7 +239,7 @@ func NewButtons(logger *slog.Logger) *Buttons {
 }
 
 func (b *Buttons) GetStatus(data []byte) ButtonStatus {
-	buttons := data[5] >> 4 + data[6] << 4
+	buttons := data[5]>>4 + data[6]<<4
 
 	b.logger.Debug("GetStatus", "buttons", buttons)
 

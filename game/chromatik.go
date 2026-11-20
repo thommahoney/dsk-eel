@@ -58,7 +58,7 @@ func (c *Chromatik) ArtNetSend(bytes []byte) (int, error) {
 	return c.ArtNetConnection.WriteTo(bytes, c.ArtNetNode)
 }
 
-var buttonIndex = 0;
+var buttonIndex = 0
 var buttonToOSCAddress = map[controller.ButtonStatus][]string{
 	controller.Btn_Red:    {"/lx/mixer/channel/1/fader", "/lx/mixer/channel/2/fader"},
 	controller.Btn_Green:  {"/lx/mixer/channel/3/fader", "/lx/mixer/channel/4/fader"},
