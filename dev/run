@@ -68,7 +68,8 @@ check)
 	set -- sh /src/dev/check "$@"
 	;;
 smoke)
-	# The game sends OSC to a fixed LAN address; keep a test run off the network.
+	# The game's default Ableton address is on the LAN; keep a test run off
+	# the network whatever flags it is given.
 	shift
 	set -- sh /src/dev/smoke "$@"
 	network="--network none"

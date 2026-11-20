@@ -68,3 +68,27 @@ func TestChromatikFlag(t *testing.T) {
 		t.Errorf("--chromatik 10.0.0.5 gave %q", cfg.ArtNetDest)
 	}
 }
+
+// TestAbletonFlag checks the three forms of --ableton: left out, the
+// default address is used; given, it replaces the default; given empty,
+// the address is empty, which turns Ableton off.
+func TestAbletonFlag(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"not given", nil, "192.168.1.104:11000"},
+		{"given", []string{"--ableton", "10.0.0.7:9000"}, "10.0.0.7:9000"},
+		{"empty", []string{"--ableton", ""}, ""},
+	} {
+		flags := pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError)
+		cfg, err := parseFlags(flags, c.args)
+		if err != nil {
+			t.Fatalf("%s: parseFlags: %v", c.name, err)
+		}
+		if cfg.AbletonDest != c.want {
+			t.Errorf("%s: the Ableton address is %q, want %q", c.name, cfg.AbletonDest, c.want)
+		}
+	}
+}
