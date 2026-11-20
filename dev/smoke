@@ -28,7 +28,7 @@ fi
 
 echo "==> demo run for ${secs}s" >&2
 GORACE=halt_on_error=1 timeout "$secs" "$tmp/dsk-eel" \
-	--nojoy --demo --chromatik 127.0.0.1 -v >"$tmp/log" 2>&1
+	--nojoy --demo -v >"$tmp/log" 2>&1
 status=$?
 
 if [ "$status" -eq 124 ]; then
