@@ -175,7 +175,8 @@ func (e *Eel) Move() error {
 	// it once, so the whole tick steers and signals by the same direction.
 	controlDir := e.Game.controlDir.Load()
 
-	var nextPoint *Point
+	// next is where the head goes on this tick.
+	next := *head
 	nextHop := head.Segment.NextHop(travelDir, controlDir)
 
 	if (head.Position == 0 && travelDir == Lesser) ||
@@ -205,16 +206,15 @@ func (e *Eel) Move() error {
 
 		e.Segment = nextHop.Point.Segment
 
-		nextPoint = nextHop.Point
+		// Copy the hop's point rather than keep the pointer. That Point is
+		// part of the segment graph, and the points in the body are written
+		// to again when they are reused below.
+		next = *nextHop.Point
 		e.TravelDir = nextHop.Direction
+	} else if e.TravelDir == Greater {
+		next.Position++
 	} else {
-		p := *head
-		nextPoint = &p
-		if e.TravelDir == Greater {
-			nextPoint.Position++
-		} else {
-			nextPoint.Position--
-		}
+		next.Position--
 	}
 
 	// Advance the body in place. NewEel gave the slice spare capacity, so
@@ -222,15 +222,21 @@ func (e *Eel) Move() error {
 	if e.Growth > 0 {
 		e.Body = append(e.Body, nil)
 		copy(e.Body[1:], e.Body[:len(e.Body)-1])
-		e.Body[0] = nextPoint
+		e.Body[0] = &Point{Segment: next.Segment, Position: next.Position}
 		e.Growth--
 
 		if e.Growth == 0 {
 			e.Game.Food = NewFood(e.Game)
 		}
 	} else {
+		// The tail leaves its pixel on this tick, so its Point becomes the
+		// new head and a tick without growth allocates nothing. This works
+		// because the body owns every Point in it: nothing else holds on to
+		// one from tick to tick.
+		tail := e.Tail()
+		*tail = next
 		copy(e.Body[1:], e.Body[:len(e.Body)-1])
-		e.Body[0] = nextPoint
+		e.Body[0] = tail
 	}
 
 	// Build the frame in g.frame. Later layers paint over earlier ones:
