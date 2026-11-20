@@ -41,12 +41,11 @@ type Eel struct {
 	TravelDir Direction
 }
 
-// NewBody returns GrowthIncrement points in a row on a random segment, in a
-// slice with room for capacity points.
-func (g *Game) NewBody(capacity int) (*Segment, []*Point) {
-	startingSegment := g.RandomSegment()
-	start := Max(rand.N(SegmentLength), GrowthIncrement-1)
-	return startingSegment, newBodyAt(startingSegment, start, capacity)
+// randomPlacement picks where a new food goes: a random segment and the
+// position of the food's first point. The food runs from there towards
+// lower positions.
+func (g *Game) randomPlacement() (*Segment, int) {
+	return g.RandomSegment(), Max(rand.N(SegmentLength), GrowthIncrement-1)
 }
 
 // newBodyAt returns GrowthIncrement points in a row on segment, the first
@@ -72,17 +71,126 @@ func NewEel(g *Game) *Eel {
 	}
 }
 
-// @todo don't spawn food on top of eel
+// foodPlacementTries is how many random placements NewFood tries before it
+// looks at every placement in turn. An eel has to cover a large part of the
+// dome before eight random placements in a row all touch it or land on a
+// segment that is too close to its head.
+const foodPlacementTries = 8
+
+// How close a segment is to the eel's head, for placing new food, from
+// furthest to nearest. foodPlacement takes the first level that has room,
+// and far is the zero value, which is what every segment is with no eel.
+//
+// Far from the head, the food is at least two junctions away, the stick
+// decides at one of them at least, and the eel needs more than a second
+// and a half to get there. A segment one junction ahead joins the end of
+// the head's segment that the head is travelling towards. Food there can
+// be one pixel away when the head is about to cross, and two junctions of
+// the dome lead to one segment only, whatever the stick says. Food on the
+// head's own segment can be straight ahead, to be eaten without a turn.
+const (
+	foodFarFromHead = iota
+	foodOneJunctionAhead
+	foodOnHeadSegment
+	foodNearnessLevels
+)
+
+// NewFood returns a fresh food that does not touch the eel, as long as the
+// dome still has GrowthIncrement free pixels in a row on some segment. The
+// food is not on the segment the eel's head is on, nor on a segment that
+// joins the end the head is travelling towards, unless only those segments
+// have room.
 func NewFood(g *Game) *Food {
-	// Food only ever shrinks, so it needs no spare capacity.
-	_, body := g.NewBody(GrowthIncrement)
+	segment, start := g.foodPlacement()
 
 	return &Food{
-		Body:  body,
+		// Food only ever shrinks, so it needs no spare capacity.
+		Body:  newBodyAt(segment, start, GrowthIncrement),
 		Game:  g,
 		Fresh: true,
 		Hue:   rand.Float64() * 360.0,
 	}
+}
+
+// foodPlacement picks the segment and first position for a new food, away
+// from every pixel the eel is on and as far from its head as the levels
+// above allow: on a segment far from the head if one has room, or else one
+// junction ahead of it, or else on the head's own segment.
+//
+// If the eel leaves no room anywhere, the food is placed at random and will
+// overlap the eel: a game that far along gets a food it bites at once rather
+// than no food at all.
+func (g *Game) foodPlacement() (*Segment, int) {
+	// Mark the eel's pixels from its body, and take the head from it too.
+	// g.frameSet cannot be used: Move makes new food after it has advanced
+	// the body but before it has redrawn, when frameSet still describes
+	// the previous frame.
+	var taken [SegmentCount * SegmentLength]bool
+	var nearness [SegmentCount]uint8
+	if g.Eel != nil && len(g.Eel.Body) > 0 {
+		for _, p := range g.Eel.Body {
+			taken[p.Segment.Offset+p.Position] = true
+		}
+
+		// A diagonal stick leads where one of these four does.
+		head := g.Eel.Head().Segment
+		for _, turn := range [...]controller.Direction{
+			controller.Dir_North, controller.Dir_South, controller.Dir_East, controller.Dir_West,
+		} {
+			if hop := head.NextHop(g.Eel.TravelDir, turn); hop != nil {
+				nearness[hop.Point.Segment.Offset/SegmentLength] = foodOneJunctionAhead
+			}
+		}
+		nearness[head.Offset/SegmentLength] = foodOnHeadSegment
+	}
+
+	for range foodPlacementTries {
+		segment, start := g.randomPlacement()
+		if nearness[segment.Offset/SegmentLength] == foodFarFromHead && placementFree(&taken, segment, start) {
+			return segment, start
+		}
+	}
+
+	// Every random try touched the eel or landed too close to its head, so
+	// look at all the placements, in one group for each level of nearness.
+	// Each free one replaces its group's choice so far with probability
+	// one in the number of free ones seen in the group, which leaves every
+	// free placement of a group equally likely to be the group's choice.
+	// The choice of the group furthest from the head that has one is used.
+	var choices [foodNearnessLevels]struct {
+		segment *Segment
+		start   int
+		free    int
+	}
+	for _, s := range g.Segments {
+		c := &choices[nearness[s.Offset/SegmentLength]]
+		for i := GrowthIncrement - 1; i < SegmentLength; i++ {
+			if !placementFree(&taken, s, i) {
+				continue
+			}
+			c.free++
+			if rand.N(c.free) == 0 {
+				c.segment, c.start = s, i
+			}
+		}
+	}
+	for _, c := range choices {
+		if c.free > 0 {
+			return c.segment, c.start
+		}
+	}
+	return g.randomPlacement()
+}
+
+// placementFree reports whether none of the GrowthIncrement pixels of a body
+// on segment, from position start downwards, is marked in taken.
+func placementFree(taken *[SegmentCount * SegmentLength]bool, segment *Segment, start int) bool {
+	for i := start; i > start-GrowthIncrement; i-- {
+		if taken[segment.Offset+i] {
+			return false
+		}
+	}
+	return true
 }
 
 func Max(a, b int) int {

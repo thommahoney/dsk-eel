@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"math/rand/v2"
+	"testing"
+)
 
 // A new eel must never be about to die. Its head starts at position 6 of a
 // 22-pixel segment, travelling towards position 21, with its other six
@@ -36,8 +39,10 @@ func TestNewEelStartsAtTheLowEndOfItsSegment(t *testing.T) {
 // With nobody touching the stick, a new eel moves 15 times and only the
 // 16th tick, the one that reaches the first junction, ends the game. So no
 // game ends before the player has had 16 ticks (1.12 s) to choose a turn.
-// Every segment is tried, several times each so the food falls in
-// different places, sometimes in the eel's path.
+// Every segment is tried, several times each. Half of the games have the
+// food where NewFood puts it, which is never on a new eel's own segment.
+// The other half have a food put in the eel's path by hand: a game cannot
+// start that way, but it shows that a meal on the way does not end one.
 func TestNewGameNeverEndsBeforeTheFirstJunction(t *testing.T) {
 	g, _ := newTestGame(t)
 
@@ -50,6 +55,12 @@ func TestNewGameNeverEndsBeforeTheFirstJunction(t *testing.T) {
 				p.Segment = segment
 			}
 			g.Food = NewFood(g)
+			if game%2 == 1 {
+				// The eel is on positions 0..6, so a food can start
+				// anywhere from 13 to 21.
+				start := 2*GrowthIncrement - 1 + rand.N(SegmentLength-2*GrowthIncrement+1)
+				g.Food = &Food{Body: newBodyAt(segment, start, GrowthIncrement), Game: g, Fresh: true}
+			}
 			g.Brightness = 1.0
 
 			for move := 1; move <= 15; move++ {
