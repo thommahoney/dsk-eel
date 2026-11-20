@@ -22,58 +22,132 @@ const (
 
 	// Initial length of Eel, length of food
 	GrowthIncrement = 7
+
+	// eelStartPosition is where the head of a new eel starts on its
+	// segment: the lowest position that leaves room for the body below it.
+	// A new eel sets off towards the high end of its segment, so this is
+	// the longest run-up a segment allows: SegmentLength-1-eelStartPosition
+	// moves, a little over a second, before the tick that takes the eel
+	// through its first junction. A game therefore never ends before the
+	// player has had that long to choose a turn.
+	eelStartPosition = GrowthIncrement - 1
 )
 
 type Eel struct {
-	Body       []*Point
-	ControlDir controller.Direction
-	Game       *Game
-	Growth     int
-	Segment    *Segment
-	TravelDir  Direction
+	Body      []*Point
+	Game      *Game
+	Growth    int
+	Segment   *Segment
+	TravelDir Direction
 }
 
-// NewBody returns GrowthIncrement points in a row on a random segment, in a
-// slice with room for capacity points.
-func (g *Game) NewBody(capacity int) (*Segment, []*Point) {
-	startingSegment := g.RandomSegment()
+// randomPlacement picks where a new food goes: a random segment and the
+// position of the food's first point. The food runs from there towards
+// lower positions, so the first point needs GrowthIncrement-1 positions
+// below it. Every position that leaves that much room is equally likely.
+func (g *Game) randomPlacement() (*Segment, int) {
+	start := GrowthIncrement - 1 + rand.N(SegmentLength-GrowthIncrement+1)
+	return g.RandomSegment(), start
+}
+
+// newBodyAt returns GrowthIncrement points in a row on segment, the first
+// at position start and the rest below it, in a slice with room for
+// capacity points.
+func newBodyAt(segment *Segment, start, capacity int) []*Point {
 	body := make([]*Point, 0, capacity)
-	start := Max(rand.N(SegmentLength), GrowthIncrement-1)
 	for i := start; i > start-GrowthIncrement; i-- {
-		body = append(body, &Point{Segment: startingSegment, Position: i})
+		body = append(body, &Point{Segment: segment, Position: i})
 	}
-	return startingSegment, body
+	return body
 }
 
+// NewEel returns a new eel on a random segment, with its head at
+// eelStartPosition and travelling towards the high end.
 func NewEel(g *Game) *Eel {
-	segment, body := g.NewBody(initialBodyCap)
+	segment := g.RandomSegment()
 	return &Eel{
-		Body:       body,
-		ControlDir: controller.Dir_Neutral,
-		Game:       g,
-		Segment:    segment,
-		TravelDir:  Greater,
+		Body:      newBodyAt(segment, eelStartPosition, initialBodyCap),
+		Game:      g,
+		Segment:   segment,
+		TravelDir: Greater,
 	}
 }
 
-// @todo don't spawn food on top of eel
+// foodPlacementTries is how many random placements NewFood tries before it
+// looks at every placement in turn. An eel has to cover a large part of the
+// dome before eight random placements in a row all touch it.
+const foodPlacementTries = 8
+
+// NewFood returns a fresh food that does not touch the eel, as long as the
+// dome still has GrowthIncrement free pixels in a row on some segment.
 func NewFood(g *Game) *Food {
-	// Food only ever shrinks, so it needs no spare capacity.
-	_, body := g.NewBody(GrowthIncrement)
+	segment, start := g.foodPlacement()
 
 	return &Food{
-		Body:  body,
+		// Food only ever shrinks, so it needs no spare capacity.
+		Body:  newBodyAt(segment, start, GrowthIncrement),
 		Game:  g,
 		Fresh: true,
 		Hue:   rand.Float64() * 360.0,
 	}
 }
 
-func Max(a, b int) int {
-	if a > b {
-		return a
+// foodPlacement picks the segment and first position for a new food, away
+// from every pixel the eel is on.
+//
+// If the eel leaves no room anywhere, the food is placed at random and will
+// overlap the eel: a game that far along gets a food it bites at once rather
+// than no food at all.
+func (g *Game) foodPlacement() (*Segment, int) {
+	// Mark the eel's pixels from its body. g.frameSet cannot be used: Move
+	// makes new food after it has advanced the body but before it has
+	// redrawn, when frameSet still describes the previous frame.
+	var taken [SegmentCount * SegmentLength]bool
+	if g.Eel != nil {
+		for _, p := range g.Eel.Body {
+			taken[p.Segment.Offset+p.Position] = true
+		}
 	}
-	return b
+
+	for range foodPlacementTries {
+		segment, start := g.randomPlacement()
+		if placementFree(&taken, segment, start) {
+			return segment, start
+		}
+	}
+
+	// Every random try touched the eel, so look at all the placements.
+	// Each free one replaces the choice so far with probability one in the
+	// number of free ones seen, which leaves every free placement equally
+	// likely to be the final choice.
+	var segment *Segment
+	start, free := 0, 0
+	for _, s := range g.Segments {
+		for i := GrowthIncrement - 1; i < SegmentLength; i++ {
+			if !placementFree(&taken, s, i) {
+				continue
+			}
+			free++
+			if rand.N(free) == 0 {
+				segment, start = s, i
+			}
+		}
+	}
+	if free == 0 {
+		return g.randomPlacement()
+	}
+	return segment, start
+}
+
+// placementFree reports whether none of the GrowthIncrement pixels of a body
+// on segment, from position start downwards, is marked in taken.
+func placementFree(taken *[SegmentCount * SegmentLength]bool, segment *Segment, start int) bool {
+	for i := start; i > start-GrowthIncrement; i-- {
+		if taken[segment.Offset+i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Eel) Length() int {
@@ -97,14 +171,18 @@ func (e *Eel) Move() error {
 	head := e.Head()
 	travelDir := e.TravelDir
 
+	// The joystick goroutine can change the direction at any moment. Read
+	// it once, so the whole tick steers and signals by the same direction.
+	controlDir := e.Game.controlDir.Load()
+
 	var nextPoint *Point
-	nextHop := head.Segment.NextHop(travelDir, e.ControlDir)
+	nextHop := head.Segment.NextHop(travelDir, controlDir)
 
 	if (head.Position == 0 && travelDir == Lesser) ||
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
 
 		var cDir controller.Direction
-		if e.Game.DemoMode && e.ControlDir == controller.Dir_Neutral {
+		if controlDir == controller.Dir_Neutral && e.Game.inDemoMode() {
 			switch rand.N(4) {
 			case 0:
 				cDir = controller.Dir_North
@@ -116,7 +194,7 @@ func (e *Eel) Move() error {
 				cDir = controller.Dir_West
 			}
 		} else {
-			cDir = e.ControlDir
+			cDir = controlDir
 		}
 
 		nextHop = head.Segment.NextHop(travelDir, cDir)

@@ -2,40 +2,59 @@ package game
 
 import (
 	"fmt"
+	"log/slog"
 
-	"github.com/hypebeast/go-osc/osc"
 	"github.com/thommahoney/dsk-eel/config"
 )
 
+// Ableton sends OSC messages to Ableton Live (the AbletonOSC remote script).
 type Ableton struct {
-	OscClient *osc.Client
+	// OscClient is nil when Ableton is disabled; sends then do nothing.
+	OscClient *OscClient
+	// Logger receives send errors at debug level. It may be nil.
+	Logger *slog.Logger
 }
 
+// InitAbleton sets up the OSC destination from c.AbletonDest, a host:port.
+// An empty AbletonDest disables Ableton.
 func InitAbleton(c *config.Config) (*Ableton, error) {
-	oscClient := osc.NewClient("192.168.1.104", 11000)
+	if c.AbletonDest == "" {
+		return &Ableton{Logger: c.Logger}, nil
+	}
 
-	return &Ableton{OscClient: oscClient}, nil
+	client, err := NewOscClient(c.AbletonDest)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Ableton address %q (--ableton): %s", c.AbletonDest, err)
+	}
+
+	return &Ableton{OscClient: client, Logger: c.Logger}, nil
 }
 
 func (c *Ableton) FireScene(scene int32) {
-	c.OscSend("/live/scene/fire", scene)
+	c.fire("/live/scene/fire", scene)
 }
 
 func (c *Ableton) FireClip(clip, track int32) {
-	c.OscSend("/live/clip/fire", clip, track)
+	c.fire("/live/clip/fire", clip, track)
 }
 
+// fire sends a message for callers that carry on whether or not Ableton
+// got it. A failure is logged at debug level, so that playing without
+// Ableton reachable does not fill the log at the default level.
+func (c *Ableton) fire(address string, values ...int32) {
+	if err := c.OscSend(address, values...); err != nil && c.Logger != nil {
+		c.Logger.Debug("Ableton OSC send failed", "address", address, "error", err)
+	}
+}
+
+// OscSend sends one OSC message whose arguments are the given int32
+// values, in order. It does nothing when Ableton is disabled.
 func (c *Ableton) OscSend(address string, values ...int32) error {
-	if address == "" {
+	if address == "" || c.OscClient == nil {
 		return nil
 	}
 
-	msg := osc.NewMessage(address)
-	for v := range values {
-		msg.Append(v)
-	}
-
-	err := c.OscClient.Send(msg)
+	err := c.OscClient.SendInts(address, values...)
 	if err != nil {
 		return fmt.Errorf("failed to send OSC message: %s", err)
 	}
