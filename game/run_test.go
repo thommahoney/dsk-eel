@@ -97,7 +97,7 @@ func TestGameOverAnimationStartsAtFullBrightness(t *testing.T) {
 	// tick ends the game without drawing.
 	place(g, 0, 21, 7, 0.7, 5, 12, 6)
 	g.brightnessIncrement = -0.05
-	g.QuitChan = make(chan struct{})
+	g.tick = fastTick
 
 	var wg sync.WaitGroup
 	wg.Add(1)
