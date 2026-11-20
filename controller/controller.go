@@ -1,23 +1,84 @@
 package controller
 
 import (
-	"log"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/sstallion/go-hid"
 	"github.com/thommahoney/dsk-eel/config"
 )
 
+const (
+	// DefaultRetryInterval is how long the controller waits between
+	// attempts to open a joystick that is not there.
+	DefaultRetryInterval = time.Second
+
+	// reportBufLen is the size of the buffer reports are read into.
+	// minReportLen is the shortest report that can be decoded: the decoders
+	// look at bytes 0, 1, 5 and 6.
+	reportBufLen = 8
+	minReportLen = 7
+
+	// While the joystick stays away, the first failed attempt to open it is
+	// logged and then one in every openLogEvery: about one line a minute at
+	// the default interval. The same goes for a device that can be opened
+	// but fails on its first read every time.
+	openLogEvery = 60
+)
+
+// Device is what the controller needs from the joystick's HID device. The
+// real one is opened by OpenHID; tests substitute a fake.
+type Device interface {
+	// Read waits for the next input report, copies it into p and returns
+	// its length.
+	Read(p []byte) (int, error)
+	Close() error
+	Manufacturer() (string, error)
+	Product() (string, error)
+}
+
+// OpenFunc opens the joystick.
+type OpenFunc func() (Device, error)
+
+// Controller reads the joystick on a goroutine of its own and reports what
+// it sees through two callbacks, which are never called at the same time:
+//
+//   - Handler gets the new state whenever the direction or the buttons
+//     change. It is called on the reader goroutine.
+//   - Lost is called when the joystick cannot be opened or stops answering.
+//     From then on the stick counts as neutral with no buttons down, and the
+//     controller tries to open the joystick again once every retry interval.
+//     Nothing is called when that succeeds: states simply start arriving
+//     again. It is called on the reader goroutine, except when the joystick
+//     cannot be opened at startup: then Start calls it, on its caller's
+//     goroutine, before the reader goroutine exists.
 type Controller struct {
-	data       []byte
-	device     *hid.Device
-	devicePath string
-	logger     *slog.Logger
+	data          []byte
+	logger        *slog.Logger
+	open          OpenFunc
+	retryInterval time.Duration
+
+	// Used only by the reader goroutine, and by Start before the goroutine
+	// exists. openFailures counts the failed attempts to open the joystick
+	// since it was last open. deadConnections counts the connections in a
+	// row that failed before a single report was read. wasConnected is
+	// whether the joystick has ever been open. shortReportLogged is whether
+	// the warning about a report too short to decode has been logged for
+	// the connection that is open now.
+	openFailures      int
+	deadConnections   int
+	wasConnected      bool
+	shortReportLogged bool
+
+	stop     chan struct{}
+	stopOnce sync.Once
+	finished chan struct{}
 
 	Buttons  *Buttons
 	Handler  func(ControllerState)
 	Joystick *Joystick
+	Lost     func()
 }
 
 type ControllerState struct {
@@ -114,98 +175,218 @@ func (bs ButtonStatus) String() string {
 	return s
 }
 
-func NewController(config *config.Config, handleFunc func(ControllerState)) (*Controller, error) {
-	c := &Controller{
-		Handler:    handleFunc,
-		data:       make([]byte, 8),
-		devicePath: config.ControllerPath,
-		logger:     config.Logger,
-	}
-
-	if err := c.Init(); err != nil {
+// NewController starts reading the joystick at config.ControllerPath. It
+// does not fail if the joystick is not there: see Start.
+func NewController(config *config.Config, handleFunc func(ControllerState), lostFunc func()) (*Controller, error) {
+	if err := initHID(); err != nil {
 		return nil, err
 	}
 
-	mfr, err := c.GetManufacturer()
-	if err != nil {
-		log.Fatal(err)
-	}
-	product, err := c.GetProduct()
-	if err != nil {
-		log.Fatal(err)
-	}
-	c.logger.Info("connected to joystick", "manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
-
-	return c, nil
+	path := config.ControllerPath
+	open := func() (Device, error) { return OpenHID(path) }
+	return Start(config.Logger, open, DefaultRetryInterval, handleFunc, lostFunc), nil
 }
 
-func (c *Controller) Init() error {
-	if err := hid.Init(); err != nil {
-		return err
+// Start opens the joystick with open and starts the reader goroutine. If the
+// joystick cannot be opened, Start logs a warning, calls lostFunc before it
+// returns and leaves the goroutine retrying, exactly as if the joystick had
+// been there and then been unplugged.
+func Start(logger *slog.Logger, open OpenFunc, retryInterval time.Duration, handleFunc func(ControllerState), lostFunc func()) *Controller {
+	c := &Controller{
+		Buttons:       NewButtons(logger),
+		Handler:       handleFunc,
+		Joystick:      NewJoystick(logger),
+		Lost:          lostFunc,
+		data:          make([]byte, reportBufLen),
+		finished:      make(chan struct{}),
+		logger:        logger,
+		open:          open,
+		retryInterval: retryInterval,
+		stop:          make(chan struct{}),
 	}
 
-	d, err := hid.OpenPath(c.devicePath)
-	if err != nil {
-		return err
+	device := c.connect()
+	if device == nil {
+		c.notifyLost()
 	}
+	go c.run(device)
 
-	c.device = d
+	return c
+}
 
-	c.Joystick = NewJoystick(c.logger)
-	c.Buttons = NewButtons(c.logger)
+// Stop ends the reader goroutine. It cannot interrupt a read from the
+// device: the goroutine ends when the read in progress returns, or at once
+// if it is waiting to retry. The game reads the joystick for as long as the
+// program runs and never calls this; tests do.
+func (c *Controller) Stop() {
+	c.stopOnce.Do(func() { close(c.stop) })
+}
 
-	go func() {
-		prevDirection := Dir_Neutral
-		prevButtons := Btn_None
-		for {
-			changed := false
-			state, err := c.GetState()
-			if err != nil {
-				log.Fatal("error retrieving controller state:", err)
-			}
+func (c *Controller) stopped() bool {
+	select {
+	case <-c.stop:
+		return true
+	default:
+		return false
+	}
+}
 
-			if state.Direction != prevDirection {
-				prevDirection = state.Direction
-				changed = true
-			}
+func (c *Controller) notifyLost() {
+	if c.Lost != nil {
+		c.Lost()
+	}
+}
 
-			if state.ButtonStatus != prevButtons {
-				prevButtons = state.ButtonStatus
-				changed = true
-			}
+// run is the reader goroutine. device is the open joystick, or nil if it
+// could not be opened.
+func (c *Controller) run(device Device) {
+	defer close(c.finished)
 
-			if changed && c.Handler != nil {
-				c.Handler(*state)
+	for {
+		if device == nil {
+			device = c.reconnect()
+			if device == nil {
+				return
 			}
 		}
-	}()
 
-	return nil
-}
-
-func (c *Controller) GetManufacturer() (string, error) {
-	s, err := c.device.GetMfrStr()
-	if err != nil {
-		return "", err
+		gotReport, err := c.readStates(device)
+		if err != nil {
+			if gotReport {
+				c.deadConnections = 0
+			} else {
+				c.deadConnections++
+			}
+			if c.deadConnections <= 1 || c.deadConnections%openLogEvery == 0 {
+				c.logger.Warn("lost the joystick: read failed", "error", err)
+			}
+		}
+		if closeErr := device.Close(); closeErr != nil {
+			c.logger.Debug("closing the joystick failed", "error", closeErr)
+		}
+		device = nil
+		if err == nil {
+			return
+		}
+		c.notifyLost()
 	}
-	return s, nil
 }
 
-func (c *Controller) GetProduct() (string, error) {
-	s, err := c.device.GetProductStr()
+// connect tries once to open the joystick and returns it, or nil. It logs
+// the joystick's identity on success, and on failure a warning for the first
+// failed attempt in a row and for an occasional one after that.
+func (c *Controller) connect() Device {
+	device, err := c.open()
 	if err != nil {
-		return "", err
+		c.openFailures++
+		if c.openFailures == 1 || c.openFailures%openLogEvery == 0 {
+			c.logger.Warn("cannot open the joystick, will keep trying",
+				"error", err, "attempts", c.openFailures, "retry", c.retryInterval)
+		}
+		return nil
 	}
-	return s, nil
+	c.openFailures = 0
+
+	// The identity strings are only for the log.
+	mfr, err := device.Manufacturer()
+	if err != nil {
+		c.logger.Warn("cannot read the joystick's manufacturer string", "error", err)
+	}
+	product, err := device.Product()
+	if err != nil {
+		c.logger.Warn("cannot read the joystick's product string", "error", err)
+	}
+
+	msg := "connected to joystick"
+	if c.wasConnected {
+		msg = "reconnected to joystick"
+	}
+	c.wasConnected = true
+	c.logger.Info(msg, "manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
+
+	return device
 }
 
-func (c *Controller) GetState() (*ControllerState, error) {
-	l, err := c.device.Read(c.data)
+// reconnect tries to open the joystick once every retry interval until it
+// succeeds. It returns nil if the controller is stopped first.
+func (c *Controller) reconnect() Device {
+	timer := time.NewTimer(c.retryInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-c.stop:
+			return nil
+		case <-timer.C:
+		}
+
+		if device := c.connect(); device != nil {
+			return device
+		}
+		timer.Reset(c.retryInterval)
+	}
+}
+
+// readStates reads reports from the device and passes every change of state
+// to the handler. It returns the error of the read that failed, or nil if
+// the controller was stopped, and whether any report was read before that.
+func (c *Controller) readStates(device Device) (gotReport bool, err error) {
+	// A joystick that has just been opened counts as untouched, which is
+	// also what Lost told the handler's owner about the one before it.
+	prevDirection := Dir_Neutral
+	prevButtons := Btn_None
+	c.shortReportLogged = false
+	for {
+		state, err := c.readState(device)
+		if c.stopped() {
+			return gotReport, nil
+		}
+		if err != nil {
+			return gotReport, err
+		}
+		gotReport = true
+		if state == nil {
+			continue
+		}
+
+		changed := false
+		if state.Direction != prevDirection {
+			prevDirection = state.Direction
+			changed = true
+		}
+
+		if state.ButtonStatus != prevButtons {
+			prevButtons = state.ButtonStatus
+			changed = true
+		}
+
+		if changed && c.Handler != nil {
+			c.Handler(*state)
+		}
+	}
+}
+
+// readState reads one report and decodes it. It returns nil, with no error,
+// for a report too short to decode: the rest of the buffer would still hold
+// bytes of an earlier report. The first short report of a connection is
+// logged, because a device that only ever sends short ones (the wrong
+// device at the path, say) would otherwise be ignored without a word.
+func (c *Controller) readState(device Device) (*ControllerState, error) {
+	l, err := device.Read(c.data)
 	if err != nil {
 		return nil, err
 	}
 
 	c.logger.Debug("read from device", "length", l, "bytes", c.data)
+
+	if l < minReportLen {
+		if !c.shortReportLogged {
+			c.shortReportLogged = true
+			c.logger.Warn("ignoring joystick reports that are too short to decode",
+				"length", l, "want", minReportLen)
+		}
+		return nil, nil
+	}
 
 	cs := &ControllerState{
 		Direction:    c.Joystick.GetDirection(c.data),
