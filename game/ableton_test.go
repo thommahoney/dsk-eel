@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hypebeast/go-osc/osc"
 	"github.com/thommahoney/dsk-eel/config"
 )
 
@@ -151,7 +150,7 @@ func TestAbletonDisabled(t *testing.T) {
 		t.Fatalf("InitAbleton with an empty address: %v", err)
 	}
 	if a.OscClient != nil {
-		t.Errorf("a disabled Ableton has an OSC client for %s:%d", a.OscClient.IP(), a.OscClient.Port())
+		t.Errorf("a disabled Ableton has an OSC client, and so a socket, for %v", a.OscClient.dest)
 	}
 	a.FireScene(7)
 	a.FireClip(6, 3)
@@ -202,13 +201,11 @@ func TestAbletonLogsSendErrorsAtDebug(t *testing.T) {
 	} {
 		var log bytes.Buffer
 		a := &Ableton{
-			// Port 70000 does not exist, so every send fails before
-			// anything reaches the network.
-			OscClient: osc.NewClient("127.0.0.1", 70000),
+			OscClient: closedOscClient(t),
 			Logger:    slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: tc.level})),
 		}
 		if err := a.OscSend("/live/scene/fire", 7); err == nil {
-			t.Fatal("OscSend to port 70000 succeeded; the test needs a send that fails")
+			t.Fatal("OscSend on a closed socket succeeded; the test needs a send that fails")
 		}
 
 		a.FireScene(7)
@@ -225,6 +222,6 @@ func TestAbletonLogsSendErrorsAtDebug(t *testing.T) {
 
 	// The test helper builds an Ableton without a logger; a failed send
 	// must not crash it.
-	a := &Ableton{OscClient: osc.NewClient("127.0.0.1", 70000)}
+	a := &Ableton{OscClient: closedOscClient(t)}
 	a.FireScene(7)
 }

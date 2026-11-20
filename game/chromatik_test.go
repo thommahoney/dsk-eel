@@ -15,8 +15,8 @@ import (
 // helpers_test.go.
 const testArtNetPort = 6454
 
-// chromatikConfig returns just enough configuration for InitChromatik. The
-// OSC client it creates opens no socket until something is sent.
+// chromatikConfig returns just enough configuration for InitChromatik. No
+// test here sends OSC; the OSC destination only has to be well formed.
 func chromatikConfig(listenSubnet string, dest net.IP) *config.Config {
 	return &config.Config{
 		ArtNetDest:   dest,
@@ -26,14 +26,18 @@ func chromatikConfig(listenSubnet string, dest net.IP) *config.Config {
 	}
 }
 
-// initChromatikForTest calls InitChromatik and makes sure the Art-Net
-// socket, which is bound to the fixed port 6454, is closed again when the
-// test ends, whether or not the test expected a socket.
+// initChromatikForTest calls InitChromatik and makes sure its sockets are
+// closed again when the test ends, whether or not the test expected any:
+// the Art-Net socket, which is bound to the fixed port 6454, and the OSC
+// client's socket.
 func initChromatikForTest(t *testing.T, c *config.Config) (*Chromatik, error) {
 	t.Helper()
 	chromatik, err := InitChromatik(c)
 	if chromatik != nil && chromatik.ArtNetConnection != nil {
 		t.Cleanup(func() { chromatik.ArtNetConnection.Close() })
+	}
+	if chromatik != nil && chromatik.OscClient != nil {
+		t.Cleanup(func() { chromatik.OscClient.Close() })
 	}
 	return chromatik, err
 }

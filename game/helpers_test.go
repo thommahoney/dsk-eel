@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hypebeast/go-osc/osc"
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
 )
@@ -59,9 +58,9 @@ func newTestGame(t *testing.T) (*Game, *artnetSink) {
 	g.Chromatik = &Chromatik{
 		ArtNetConnection: listenLoopback(t),
 		ArtNetNode:       sink.conn.LocalAddr().(*net.UDPAddr),
-		OscClient:        osc.NewClient("127.0.0.1", oscPort),
+		OscClient:        testOscClient(t, oscPort),
 	}
-	g.Ableton = &Ableton{OscClient: osc.NewClient("127.0.0.1", oscPort)}
+	g.Ableton = &Ableton{OscClient: testOscClient(t, oscPort)}
 	g.Segments = InitSegments()
 	g.initDrawBuffers()
 	return g, sink

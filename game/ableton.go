@@ -3,18 +3,14 @@ package game
 import (
 	"fmt"
 	"log/slog"
-	"net"
-	"strconv"
-	"strings"
 
-	"github.com/hypebeast/go-osc/osc"
 	"github.com/thommahoney/dsk-eel/config"
 )
 
 // Ableton sends OSC messages to Ableton Live (the AbletonOSC remote script).
 type Ableton struct {
 	// OscClient is nil when Ableton is disabled; sends then do nothing.
-	OscClient *osc.Client
+	OscClient *OscClient
 	// Logger receives send errors at debug level. It may be nil.
 	Logger *slog.Logger
 }
@@ -26,35 +22,12 @@ func InitAbleton(c *config.Config) (*Ableton, error) {
 		return &Ableton{Logger: c.Logger}, nil
 	}
 
-	host, port, err := splitHostPort(c.AbletonDest)
+	client, err := NewOscClient(c.AbletonDest)
 	if err != nil {
 		return nil, fmt.Errorf("invalid Ableton address %q (--ableton): %s", c.AbletonDest, err)
 	}
 
-	// The OSC client joins host and port with a colon itself, so an IPv6
-	// address needs its brackets back.
-	if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-
-	return &Ableton{OscClient: osc.NewClient(host, port), Logger: c.Logger}, nil
-}
-
-// splitHostPort splits "host:port" and checks that both parts are usable:
-// a host that is not empty and a port number from 1 to 65535.
-func splitHostPort(hostport string) (string, int, error) {
-	host, portText, err := net.SplitHostPort(hostport)
-	if err != nil {
-		return "", 0, fmt.Errorf("want host:port: %s", err)
-	}
-	if host == "" {
-		return "", 0, fmt.Errorf("want host:port: the host is empty")
-	}
-	port, err := strconv.Atoi(portText)
-	if err != nil || port < 1 || port > 65535 {
-		return "", 0, fmt.Errorf("want host:port: the port %q is not a number from 1 to 65535", portText)
-	}
-	return host, port, nil
+	return &Ableton{OscClient: client, Logger: c.Logger}, nil
 }
 
 func (c *Ableton) FireScene(scene int32) {
@@ -81,12 +54,7 @@ func (c *Ableton) OscSend(address string, values ...int32) error {
 		return nil
 	}
 
-	msg := osc.NewMessage(address)
-	for _, v := range values {
-		msg.Append(v)
-	}
-
-	err := c.OscClient.Send(msg)
+	err := c.OscClient.SendInts(address, values...)
 	if err != nil {
 		return fmt.Errorf("failed to send OSC message: %s", err)
 	}
