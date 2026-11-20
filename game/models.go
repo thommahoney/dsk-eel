@@ -43,9 +43,11 @@ type Eel struct {
 
 // randomPlacement picks where a new food goes: a random segment and the
 // position of the food's first point. The food runs from there towards
-// lower positions.
+// lower positions, so the first point needs GrowthIncrement-1 positions
+// below it. Every position that leaves that much room is equally likely.
 func (g *Game) randomPlacement() (*Segment, int) {
-	return g.RandomSegment(), Max(rand.N(SegmentLength), GrowthIncrement-1)
+	start := GrowthIncrement - 1 + rand.N(SegmentLength-GrowthIncrement+1)
+	return g.RandomSegment(), start
 }
 
 // newBodyAt returns GrowthIncrement points in a row on segment, the first
@@ -146,13 +148,6 @@ func placementFree(taken *[SegmentCount * SegmentLength]bool, segment *Segment, 
 		}
 	}
 	return true
-}
-
-func Max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func (e *Eel) Length() int {
