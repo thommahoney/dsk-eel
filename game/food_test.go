@@ -60,6 +60,14 @@ func pixelsWhere(keep func(px int) bool) []int {
 // crosses itself.
 func walkedBody(t *testing.T, g *Game, n int) []*Point {
 	t.Helper()
+	body, _ := walkedEel(t, g, n)
+	return body
+}
+
+// walkedEel is walkedBody that also returns the direction the head is
+// travelling in.
+func walkedEel(t *testing.T, g *Game, n int) ([]*Point, Direction) {
+	t.Helper()
 	turns := []controller.Direction{controller.Dir_North, controller.Dir_South, controller.Dir_East, controller.Dir_West}
 
 	// A random path can box itself in before it is long enough, so try
@@ -69,9 +77,11 @@ func walkedBody(t *testing.T, g *Game, n int) []*Point {
 		var taken [testPixels]bool
 		var path []*Point
 		seg, pos, dir := g.Segments[rand.N(testSegments)], rand.N(testSegmentLength), Direction(rand.N(2))
+		headDir := dir
 		for len(path) < n && !taken[seg.Offset+pos] {
 			taken[seg.Offset+pos] = true
 			path = append(path, &Point{Segment: seg, Position: pos})
+			headDir = dir
 
 			switch {
 			case (dir == Greater && pos == testSegmentLength-1) || (dir == Lesser && pos == 0):
@@ -82,6 +92,8 @@ func walkedBody(t *testing.T, g *Game, n int) []*Point {
 					}
 				}
 				if len(open) == 0 {
+					// Boxed in. The path stays on this pixel, which is
+					// now taken, and that ends the loop.
 					break
 				}
 				h := open[rand.N(len(open))]
@@ -94,11 +106,11 @@ func walkedBody(t *testing.T, g *Game, n int) []*Point {
 		}
 		if len(path) == n {
 			slices.Reverse(path) // the last point laid is the head
-			return path
+			return path, headDir
 		}
 	}
 	t.Fatalf("found no path of %d points through the segment graph", n)
-	return nil
+	return nil, Greater
 }
 
 // coveredPixels marks the pixels the given points are on.
