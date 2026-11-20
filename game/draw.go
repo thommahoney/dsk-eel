@@ -14,9 +14,8 @@ const (
 	artnetDMXPayloadLen = 512
 	artnetPacketLen     = artnetHeaderLen + artnetDMXPayloadLen
 
-	// Offsets of the two header bytes that differ between universes.
-	artnetSequenceByte = 12
-	artnetSubUniByte   = 14
+	// Offset of the one header byte that differs between universes.
+	artnetSubUniByte = 14
 )
 
 // initDrawBuffers fills in the header of each universe's ArtDMX packet.
@@ -28,7 +27,7 @@ func (g *Game) initDrawBuffers() {
 		0x41, 0x72, 0x74, 0x2d, 0x4e, 0x65, 0x74, 0x00, // ID "Art-Net\0"
 		0x00, 0x50, // OpCode 0x5000 (ArtDmx), low byte first
 		0x00, 0x0e, // protocol version 14, high byte first
-		0x00,       // Sequence (set per universe below)
+		0x00,       // Sequence: 0 tells the receiver sequencing is not in use
 		0x00,       // Physical
 		0x00,       // SubUni (set per universe below)
 		0x00,       // Net
@@ -36,10 +35,6 @@ func (g *Game) initDrawBuffers() {
 	}
 	for univ := 0; univ < universeCount; univ++ {
 		copy(g.artnetBufs[univ][:artnetHeaderLen], header[:])
-		// The sequence number is the universe index and is the same in
-		// every frame. That is what the code did before these buffers
-		// existed: it counted up from 0 across the universes of one frame.
-		g.artnetBufs[univ][artnetSequenceByte] = uint8(univ)
 		g.artnetBufs[univ][artnetSubUniByte] = uint8(univ)
 	}
 }
