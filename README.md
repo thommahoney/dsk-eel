@@ -15,7 +15,7 @@ This is the classic game of snake but displayed on the inside of a geodesic dome
 The only thing needed on the host is a container runtime with a `docker` CLI. The Go toolchain, libudev and the lint tools live in the image defined by [dev/Dockerfile](./dev/Dockerfile).
 
 ```bash
-dev/run check            # build, vet, staticcheck, gofmt and race tests
+dev/run check            # build, go.mod tidiness, vet, staticcheck, gofmt and race tests
 dev/run smoke            # race-instrumented demo run of the game loop
 dev/run go test ./...    # any command, run in the container
 dev/run                  # interactive shell
