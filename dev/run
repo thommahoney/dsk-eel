@@ -2,7 +2,8 @@
 # Run a command inside the dsk-eel development container.
 #
 #   dev/run                  interactive shell
-#   dev/run check            build, vet, lint, gofmt and race tests (dev/check)
+#   dev/run check            build, go.mod tidiness, vet, lint, gofmt and race
+#                            tests (dev/check)
 #   dev/run smoke            race-instrumented demo run, no network (dev/smoke)
 #   dev/run go test ./...    any other command
 #   dev/run --rebuild ...    first rebuild the image from scratch, pulling a
@@ -67,7 +68,8 @@ check)
 	set -- sh /src/dev/check "$@"
 	;;
 smoke)
-	# The game sends OSC to a fixed LAN address; keep a test run off the network.
+	# The game's default Ableton address is on the LAN; keep a test run off
+	# the network whatever flags it is given.
 	shift
 	set -- sh /src/dev/smoke "$@"
 	network="--network none"
