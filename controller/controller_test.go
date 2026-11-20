@@ -114,15 +114,17 @@ func (o *opener) count() int {
 	return o.attempts
 }
 
-// logRecorder is a slog handler that keeps what was logged.
+// logRecorder is a slog handler that keeps what was logged at level min and
+// above. The zero value keeps info and above, like the program run with -v.
 type logRecorder struct {
+	min     slog.Level
 	mu      sync.Mutex
 	records []slog.Record
 }
 
-func (l *logRecorder) Enabled(context.Context, slog.Level) bool { return true }
-func (l *logRecorder) WithAttrs([]slog.Attr) slog.Handler       { return l }
-func (l *logRecorder) WithGroup(string) slog.Handler            { return l }
+func (l *logRecorder) Enabled(_ context.Context, level slog.Level) bool { return level >= l.min }
+func (l *logRecorder) WithAttrs([]slog.Attr) slog.Handler               { return l }
+func (l *logRecorder) WithGroup(string) slog.Handler                    { return l }
 func (l *logRecorder) Handle(_ context.Context, r slog.Record) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
