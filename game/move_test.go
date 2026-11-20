@@ -103,7 +103,7 @@ func TestMoveEatingTicks(t *testing.T) {
 func TestMoveHeldDirection(t *testing.T) {
 	g, sink := newTestGame(t)
 	place(g, 3, 17, 17, 1.0, 20, 12, 6)
-	g.Eel.ControlDir = controller.Dir_North
+	g.controlDir.Store(controller.Dir_North)
 
 	if err := g.Eel.Move(); err != nil {
 		t.Fatalf("Move: %v", err)
@@ -128,7 +128,7 @@ func TestMoveHeldDirection(t *testing.T) {
 func TestMoveThroughJunction(t *testing.T) {
 	g, sink := newTestGame(t)
 	place(g, 0, 21, 7, 0.9, 20, 12, 6)
-	g.Eel.ControlDir = controller.Dir_North
+	g.controlDir.Store(controller.Dir_North)
 
 	if err := g.Eel.Move(); err != nil {
 		t.Fatalf("Move: %v", err)
@@ -219,8 +219,7 @@ func TestGameOverHue(t *testing.T) {
 }
 
 // TestMoveAllocations keeps an ordinary tick, rendering and the seven
-// sends included, to the one allocation it needs: the Point for the new
-// head.
+// sends included, free of allocations.
 func TestMoveAllocations(t *testing.T) {
 	g, _ := newTestGame(t)
 	place(g, 0, 6, 7, 0.75, 5, 12, 6)
@@ -231,7 +230,7 @@ func TestMoveAllocations(t *testing.T) {
 			t.Fatalf("Move: %v", err)
 		}
 	})
-	if allocs > 1 {
-		t.Errorf("a tick allocates %v times, want at most 1", allocs)
+	if allocs != 0 {
+		t.Errorf("a tick allocates %v times, want 0", allocs)
 	}
 }

@@ -3,10 +3,9 @@ package game
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
-	"github.com/hypebeast/go-osc/osc"
-	"github.com/jsimonetti/go-artnet/packet"
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
 )
@@ -14,7 +13,7 @@ import (
 type Chromatik struct {
 	ArtNetConnection *net.UDPConn
 	ArtNetNode       *net.UDPAddr
-	OscClient        *osc.Client
+	OscClient        *OscClient
 }
 
 func InitChromatik(c *config.Config) (*Chromatik, error) {
@@ -76,8 +75,8 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 			c.ArtNetDest, ip, c.ListenSubnet)
 	}
 
-	node := &net.UDPAddr{IP: c.ArtNetDest, Port: packet.ArtNetPort}
-	localAddr := &net.UDPAddr{IP: ip, Port: packet.ArtNetPort}
+	node := &net.UDPAddr{IP: c.ArtNetDest, Port: artnetPort}
+	localAddr := &net.UDPAddr{IP: ip, Port: artnetPort}
 
 	conn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
@@ -87,7 +86,12 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 		c.Logger.Info("Art-Net socket open", "from", localAddr.String(), "to", node.String())
 	}
 
-	oscClient := osc.NewClient(c.OscDest, c.OscPort)
+	oscDest := net.JoinHostPort(c.OscDest, strconv.Itoa(c.OscPort))
+	oscClient, err := NewOscClient(oscDest)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("invalid OSC destination %q (--osc-dest, --osc-port): %s", oscDest, err)
+	}
 
 	return &Chromatik{ArtNetConnection: conn, ArtNetNode: node, OscClient: oscClient}, nil
 }
@@ -97,7 +101,7 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 // itself when dest is one of this machine's own addresses. It finds out by
 // connecting a UDP socket, which looks up the route and sends nothing.
 func localAddrFor(dest net.IP) (net.IP, error) {
-	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: dest, Port: packet.ArtNetPort})
+	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: dest, Port: artnetPort})
 	if err != nil {
 		return nil, fmt.Errorf("cannot find a local address to reach the Chromatik address %s (set with --chromatik); if the network is up, name the local subnet with --listen: %w", dest, err)
 	}
@@ -152,7 +156,6 @@ func (c *Chromatik) ArtNetSend(bytes []byte) (int, error) {
 	return c.ArtNetConnection.WriteTo(bytes, c.ArtNetNode)
 }
 
-var buttonIndex = 0
 var buttonToOSCAddress = map[controller.ButtonStatus][]string{
 	controller.Btn_Red:    {"/lx/mixer/channel/1/fader", "/lx/mixer/channel/2/fader"},
 	controller.Btn_Green:  {"/lx/mixer/channel/3/fader", "/lx/mixer/channel/4/fader"},
@@ -167,10 +170,7 @@ func (c *Chromatik) OscSend(address string, value float32) error {
 		return nil
 	}
 
-	msg := osc.NewMessage(address)
-	msg.Append(value)
-
-	err := c.OscClient.Send(msg)
+	err := c.OscClient.SendFloat(address, value)
 	if err != nil {
 		return fmt.Errorf("failed to send OSC message: %s", err)
 	}
@@ -179,10 +179,7 @@ func (c *Chromatik) OscSend(address string, value float32) error {
 }
 
 func (c *Chromatik) OscSend_swatch(swatch int) error {
-	msg := osc.NewMessage(fmt.Sprintf("/lx/palette/swatches/%d/recall", swatch))
-	msg.Append(float32(1.0))
-
-	err := c.OscClient.Send(msg)
+	err := c.OscClient.SendFloat(fmt.Sprintf("/lx/palette/swatches/%d/recall", swatch), 1.0)
 	if err != nil {
 		return fmt.Errorf("failed to send OSC swatch message: %s", err)
 	}
