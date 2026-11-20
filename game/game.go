@@ -36,12 +36,17 @@ type Game struct {
 	// what the player is doing carries over from one game to the next.
 	//
 	// controlDir is the direction the stick is held in right now.
-	// demoMode is whether the eel steers itself at junctions; Run sets it
-	// from Config.DemoMode for every game and the first input clears it.
+	// demoMode is whether this game is a demo, in which the eel steers
+	// itself at junctions; Run sets it from Config.DemoMode for every game
+	// and the first input clears it.
+	// joystickLost is set while the joystick is missing, which makes every
+	// game a demo whatever the configuration says. It is cleared by the
+	// first input from a joystick that has come back.
 	// paused stops Mover from advancing the game.
-	controlDir heldDirection
-	demoMode   atomic.Bool
-	paused     atomic.Bool
+	controlDir   heldDirection
+	demoMode     atomic.Bool
+	joystickLost atomic.Bool
+	paused       atomic.Bool
 
 	// buttonIndex alternates between the two faders of a colored button on
 	// each press. Only HandleButtonPress uses it, on the joystick goroutine.
@@ -85,7 +90,7 @@ func NewGame(config *config.Config) (*Game, error) {
 	}
 
 	if !game.Config.NoJoy {
-		c, err := controller.NewController(config, game.HandleControllerState)
+		c, err := controller.NewController(config, game.HandleControllerState, game.HandleControllerLost)
 		if err != nil {
 			return nil, fmt.Errorf("error in NewController: %s", err)
 		}
@@ -201,6 +206,28 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 	}
 }
 
+// inDemoMode reports whether the eel steers itself at junctions while the
+// stick is neutral: in a demo game, and in any game while the joystick is
+// missing.
+func (g *Game) inDemoMode() bool {
+	return g.demoMode.Load() || g.joystickLost.Load()
+}
+
+// HandleControllerLost is called by the controller, on its goroutine, when
+// the joystick cannot be opened or stops answering. The game carries on in
+// demo mode with nothing held, until the first input from a joystick that
+// has come back; that input ends demo mode the way any first input does.
+// Pause is left as it is.
+func (g *Game) HandleControllerLost() {
+	// The flag goes first, so that a tick never sees the stick let go
+	// without also seeing demo mode, which would end the game at a junction.
+	if !g.joystickLost.Swap(true) {
+		g.Config.Logger.Warn("no joystick: running in demo mode until it is back")
+	}
+	g.controlDir.Store(controller.Dir_Neutral)
+	g.prevButtons = controller.Btn_None
+}
+
 // HandleControllerState takes a new joystick state. The controller calls it
 // on its own goroutine, one call at a time, whenever the state changes, and
 // that can be at any moment: before the first game, in the middle of a tick
@@ -209,7 +236,9 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 func (g *Game) HandleControllerState(state controller.ControllerState) {
 	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
 
-	if g.demoMode.CompareAndSwap(true, false) {
+	wasLost := g.joystickLost.Swap(false)
+	wasDemo := g.demoMode.Swap(false)
+	if wasLost || wasDemo {
 		// we have a contender!
 		g.Config.Logger.Info("HandleControllerState setting DemoMode = false")
 	}
