@@ -39,10 +39,12 @@ func TestDrawSendsArtDMX(t *testing.T) {
 				c := g.frame[univ*testFullUniv+i]
 				data[i*3+0], data[i*3+1], data[i*3+2] = c[0], c[1], c[2]
 			}
+			// Sequence is left at 0, which in Art-Net means the sender
+			// does not number its packets. Any other value that never
+			// changes could make a receiver drop frames as out of order.
 			want, err := (&packet.ArtDMXPacket{
-				Sequence: uint8(univ),
-				SubUni:   uint8(univ),
-				Data:     data,
+				SubUni: uint8(univ),
+				Data:   data,
 			}).MarshalBinary()
 			if err != nil {
 				t.Fatalf("MarshalBinary: %v", err)
@@ -51,6 +53,9 @@ func TestDrawSendsArtDMX(t *testing.T) {
 				t.Fatalf("reference packet is %d bytes, want %d", len(want), testPacketLen)
 			}
 
+			if len(got) > 12 && got[12] != 0 {
+				t.Errorf("frame %d universe %d: sequence byte is %d, want 0 (sequencing disabled)", round, univ, got[12])
+			}
 			if !bytes.Equal(got, want) {
 				at := 0
 				for at < len(got) && at < len(want) && got[at] == want[at] {
