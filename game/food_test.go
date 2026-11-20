@@ -159,9 +159,9 @@ func touches(points []*Point, covered [testPixels]bool) bool {
 //
 // calls is chosen so that a free placement going unseen by chance is out of
 // the question. The first random try alone lands on any given free
-// placement once in 1078 calls, so in 40000 calls each is expected at least
-// 37 times and missed with probability below e^-37; over 784 placements and
-// all the cases that stays under 1e-12. The cases with fewer calls leave at
+// placement once in 784 calls, so in 40000 calls each is expected at least
+// 51 times and missed with probability below e^-51; over 784 placements and
+// all the cases that stays under 1e-18. The cases with fewer calls leave at
 // most 16 placements free, and each of those comes up at least once in 19
 // calls.
 func TestNewFoodAvoidsEel(t *testing.T) {
