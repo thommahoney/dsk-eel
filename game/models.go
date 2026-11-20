@@ -34,12 +34,11 @@ const (
 )
 
 type Eel struct {
-	Body       []*Point
-	ControlDir controller.Direction
-	Game       *Game
-	Growth     int
-	Segment    *Segment
-	TravelDir  Direction
+	Body      []*Point
+	Game      *Game
+	Growth    int
+	Segment   *Segment
+	TravelDir Direction
 }
 
 // NewBody returns GrowthIncrement points in a row on a random segment, in a
@@ -66,11 +65,10 @@ func newBodyAt(segment *Segment, start, capacity int) []*Point {
 func NewEel(g *Game) *Eel {
 	segment := g.RandomSegment()
 	return &Eel{
-		Body:       newBodyAt(segment, eelStartPosition, initialBodyCap),
-		ControlDir: controller.Dir_Neutral,
-		Game:       g,
-		Segment:    segment,
-		TravelDir:  Greater,
+		Body:      newBodyAt(segment, eelStartPosition, initialBodyCap),
+		Game:      g,
+		Segment:   segment,
+		TravelDir: Greater,
 	}
 }
 
@@ -115,14 +113,18 @@ func (e *Eel) Move() error {
 	head := e.Head()
 	travelDir := e.TravelDir
 
+	// The joystick goroutine can change the direction at any moment. Read
+	// it once, so the whole tick steers and signals by the same direction.
+	controlDir := e.Game.controlDir.Load()
+
 	var nextPoint *Point
-	nextHop := head.Segment.NextHop(travelDir, e.ControlDir)
+	nextHop := head.Segment.NextHop(travelDir, controlDir)
 
 	if (head.Position == 0 && travelDir == Lesser) ||
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
 
 		var cDir controller.Direction
-		if e.Game.DemoMode && e.ControlDir == controller.Dir_Neutral {
+		if controlDir == controller.Dir_Neutral && e.Game.demoMode.Load() {
 			switch rand.N(4) {
 			case 0:
 				cDir = controller.Dir_North
@@ -134,7 +136,7 @@ func (e *Eel) Move() error {
 				cDir = controller.Dir_West
 			}
 		} else {
-			cDir = e.ControlDir
+			cDir = controlDir
 		}
 
 		nextHop = head.Segment.NextHop(travelDir, cDir)
