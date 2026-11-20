@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"sync"
@@ -192,7 +193,21 @@ func NewController(config *config.Config, handleFunc func(ControllerState), lost
 // returns and leaves the goroutine retrying, exactly as if the joystick had
 // been there and then been unplugged.
 func Start(logger *slog.Logger, open OpenFunc, retryInterval time.Duration, handleFunc func(ControllerState), lostFunc func()) *Controller {
-	c := &Controller{
+	c := newController(logger, open, retryInterval, handleFunc, lostFunc)
+
+	device := c.connect()
+	if device == nil {
+		c.notifyLost()
+	}
+	go c.run(device)
+
+	return c
+}
+
+// newController returns a controller that has not opened the joystick or
+// started its goroutine yet.
+func newController(logger *slog.Logger, open OpenFunc, retryInterval time.Duration, handleFunc func(ControllerState), lostFunc func()) *Controller {
+	return &Controller{
 		Buttons:       NewButtons(logger),
 		Handler:       handleFunc,
 		Joystick:      NewJoystick(logger),
@@ -204,14 +219,6 @@ func Start(logger *slog.Logger, open OpenFunc, retryInterval time.Duration, hand
 		retryInterval: retryInterval,
 		stop:          make(chan struct{}),
 	}
-
-	device := c.connect()
-	if device == nil {
-		c.notifyLost()
-	}
-	go c.run(device)
-
-	return c
 }
 
 // Stop ends the reader goroutine. It cannot interrupt a read from the
@@ -337,7 +344,7 @@ func (c *Controller) readStates(device Device) (gotReport bool, err error) {
 	prevButtons := Btn_None
 	c.shortReportLogged = false
 	for {
-		state, err := c.readState(device)
+		state, ok, err := c.readState(device)
 		if c.stopped() {
 			return gotReport, nil
 		}
@@ -345,7 +352,7 @@ func (c *Controller) readStates(device Device) (gotReport bool, err error) {
 			return gotReport, err
 		}
 		gotReport = true
-		if state == nil {
+		if !ok {
 			continue
 		}
 
@@ -361,23 +368,30 @@ func (c *Controller) readStates(device Device) (gotReport bool, err error) {
 		}
 
 		if changed && c.Handler != nil {
-			c.Handler(*state)
+			c.Handler(state)
 		}
 	}
 }
 
-// readState reads one report and decodes it. It returns nil, with no error,
+// readState reads one report and decodes it. ok is false, with no error,
 // for a report too short to decode: the rest of the buffer would still hold
 // bytes of an earlier report. The first short report of a connection is
 // logged, because a device that only ever sends short ones (the wrong
 // device at the path, say) would otherwise be ignored without a word.
-func (c *Controller) readState(device Device) (*ControllerState, error) {
+//
+// A joystick can send a hundred or more reports a second, whether or not
+// anything has changed. So that reading one does not allocate, the state is
+// returned by value, and here and in the decoders the arguments of a debug
+// log line are only built when debug logging is on.
+func (c *Controller) readState(device Device) (state ControllerState, ok bool, err error) {
 	l, err := device.Read(c.data)
 	if err != nil {
-		return nil, err
+		return ControllerState{}, false, err
 	}
 
-	c.logger.Debug("read from device", "length", l, "bytes", c.data)
+	if c.logger.Enabled(context.Background(), slog.LevelDebug) {
+		c.logger.Debug("read from device", "length", l, "bytes", c.data)
+	}
 
 	if l < minReportLen {
 		if !c.shortReportLogged {
@@ -385,14 +399,14 @@ func (c *Controller) readState(device Device) (*ControllerState, error) {
 			c.logger.Warn("ignoring joystick reports that are too short to decode",
 				"length", l, "want", minReportLen)
 		}
-		return nil, nil
+		return ControllerState{}, false, nil
 	}
 
-	cs := &ControllerState{
+	state = ControllerState{
 		Direction:    c.Joystick.GetDirection(c.data),
 		ButtonStatus: c.Buttons.GetStatus(c.data),
 	}
-	return cs, nil
+	return state, true, nil
 }
 
 func NewJoystick(logger *slog.Logger) *Joystick {
@@ -404,7 +418,9 @@ func NewJoystick(logger *slog.Logger) *Joystick {
 func (j *Joystick) GetDirection(data []byte) Direction {
 	updown, leftright := data[0]>>6, data[1]>>6
 
-	j.logger.Debug("GetDirection", "updown", updown, "leftright", leftright)
+	if j.logger.Enabled(context.Background(), slog.LevelDebug) {
+		j.logger.Debug("GetDirection", "updown", updown, "leftright", leftright)
+	}
 
 	direction := 0
 	direction += int(updown << 2)
@@ -422,7 +438,9 @@ func NewButtons(logger *slog.Logger) *Buttons {
 func (b *Buttons) GetStatus(data []byte) ButtonStatus {
 	buttons := data[5]>>4 + data[6]<<4
 
-	b.logger.Debug("GetStatus", "buttons", buttons)
+	if b.logger.Enabled(context.Background(), slog.LevelDebug) {
+		b.logger.Debug("GetStatus", "buttons", buttons)
+	}
 
 	return ButtonStatus(buttons)
 }
