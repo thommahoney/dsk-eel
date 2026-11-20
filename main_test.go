@@ -28,7 +28,7 @@ func TestDefaultChromatikAddress(t *testing.T) {
 		t.Errorf("--help shows the --chromatik default as %q, want 127.0.0.1", got)
 	}
 
-	// The game resolves "<address>:<port>" to find where to send frames.
+	// The address must be usable as a UDP destination.
 	if _, err := net.ResolveUDPAddr("udp", net.JoinHostPort(cfg.ArtNetDest.String(), "6454")); err != nil {
 		t.Errorf("default --chromatik does not resolve: %v", err)
 	}
@@ -66,5 +66,28 @@ func TestChromatikFlag(t *testing.T) {
 	}
 	if !cfg.ArtNetDest.Equal(net.IPv4(10, 0, 0, 5)) {
 		t.Errorf("--chromatik 10.0.0.5 gave %q", cfg.ArtNetDest)
+	}
+}
+
+// TestListenFlag checks that --listen is empty unless it is given. Empty
+// tells the game to pick the local Art-Net address from the route to
+// --chromatik.
+func TestListenFlag(t *testing.T) {
+	flags := pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError)
+	cfg, err := parseFlags(flags, nil)
+	if err != nil {
+		t.Fatalf("parseFlags with no arguments: %v", err)
+	}
+	if cfg.ListenSubnet != "" {
+		t.Errorf("default --listen is %q, want it empty", cfg.ListenSubnet)
+	}
+
+	flags = pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError)
+	cfg, err = parseFlags(flags, []string{"--listen", "10.0.0.0/24"})
+	if err != nil {
+		t.Fatalf("parseFlags: %v", err)
+	}
+	if cfg.ListenSubnet != "10.0.0.0/24" {
+		t.Errorf("--listen 10.0.0.0/24 gave %q", cfg.ListenSubnet)
 	}
 }
