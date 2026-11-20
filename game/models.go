@@ -22,6 +22,15 @@ const (
 
 	// Initial length of Eel, length of food
 	GrowthIncrement = 7
+
+	// eelStartPosition is where the head of a new eel starts on its
+	// segment: the lowest position that leaves room for the body below it.
+	// A new eel sets off towards the high end of its segment, so this is
+	// the longest run-up a segment allows: SegmentLength-1-eelStartPosition
+	// moves, a little over a second, before the tick that takes the eel
+	// through its first junction. A game therefore never ends before the
+	// player has had that long to choose a turn.
+	eelStartPosition = GrowthIncrement - 1
 )
 
 type Eel struct {
@@ -37,18 +46,27 @@ type Eel struct {
 // slice with room for capacity points.
 func (g *Game) NewBody(capacity int) (*Segment, []*Point) {
 	startingSegment := g.RandomSegment()
-	body := make([]*Point, 0, capacity)
 	start := Max(rand.N(SegmentLength), GrowthIncrement-1)
-	for i := start; i > start-GrowthIncrement; i-- {
-		body = append(body, &Point{Segment: startingSegment, Position: i})
-	}
-	return startingSegment, body
+	return startingSegment, newBodyAt(startingSegment, start, capacity)
 }
 
+// newBodyAt returns GrowthIncrement points in a row on segment, the first
+// at position start and the rest below it, in a slice with room for
+// capacity points.
+func newBodyAt(segment *Segment, start, capacity int) []*Point {
+	body := make([]*Point, 0, capacity)
+	for i := start; i > start-GrowthIncrement; i-- {
+		body = append(body, &Point{Segment: segment, Position: i})
+	}
+	return body
+}
+
+// NewEel returns a new eel on a random segment, with its head at
+// eelStartPosition and travelling towards the high end.
 func NewEel(g *Game) *Eel {
-	segment, body := g.NewBody(initialBodyCap)
+	segment := g.RandomSegment()
 	return &Eel{
-		Body:       body,
+		Body:       newBodyAt(segment, eelStartPosition, initialBodyCap),
 		ControlDir: controller.Dir_Neutral,
 		Game:       g,
 		Segment:    segment,
