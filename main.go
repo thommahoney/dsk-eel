@@ -11,19 +11,30 @@ import (
 	"github.com/thommahoney/dsk-eel/game"
 )
 
-func main() {
+// parseFlags registers the command line flags on the given flag set, parses
+// args with it and returns the resulting configuration. main passes
+// pflag.CommandLine; tests pass a flag set of their own.
+func parseFlags(flags *pflag.FlagSet, args []string) (config.Config, error) {
 	config := config.Config{}
 
-	pflag.BoolVar(&config.DemoMode, "demo", false, "Randomly move eel")
-	pflag.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
-	pflag.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
-	pflag.IPVar(&config.ArtNetDest, "chromatik", net.IP("127.0.0.1"), "IP address of Chromatik")
-	pflag.StringVar(&config.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
-	pflag.StringVar(&config.ListenSubnet, "listen", "127.0.0.1/24", "Network subnet for Art-Net comms")
-	pflag.StringVar(&config.OscDest, "osc-dest", "127.0.0.1", "IP address of OSC server. Usually the same as --chromatik")
-	pflag.IntVar(&config.OscPort, "osc-port", 3030, "Port of OSC server")
+	flags.BoolVar(&config.DemoMode, "demo", false, "Randomly move eel")
+	flags.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
+	flags.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
+	flags.IPVar(&config.ArtNetDest, "chromatik", net.IPv4(127, 0, 0, 1), "IP address of Chromatik")
+	flags.StringVar(&config.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
+	flags.StringVar(&config.ListenSubnet, "listen", "127.0.0.1/24", "Network subnet for Art-Net comms")
+	flags.StringVar(&config.OscDest, "osc-dest", "127.0.0.1", "IP address of OSC server. Usually the same as --chromatik")
+	flags.IntVar(&config.OscPort, "osc-port", 3030, "Port of OSC server")
 
-	pflag.Parse()
+	err := flags.Parse(args)
+	return config, err
+}
+
+func main() {
+	config, err := parseFlags(pflag.CommandLine, os.Args[1:])
+	if err != nil {
+		log.Fatalf("invalid arguments: %s", err)
+	}
 
 	config.Logger = NewLogger(config.Verbosity)
 
