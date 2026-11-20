@@ -25,6 +25,7 @@ func parseFlags(flags *pflag.FlagSet, args []string) (config.Config, error) {
 	flags.StringVar(&config.ListenSubnet, "listen", "", "Subnet of the local address to send Art-Net from, e.g. 10.0.0.0/24. Empty picks the address that reaches --chromatik; give it on a machine with more than one network")
 	flags.StringVar(&config.OscDest, "osc-dest", "127.0.0.1", "IP address of OSC server. Usually the same as --chromatik")
 	flags.IntVar(&config.OscPort, "osc-port", 3030, "Port of OSC server")
+	flags.StringVar(&config.AbletonDest, "ableton", "192.168.1.104:11000", "host:port of Ableton Live's OSC server (AbletonOSC). Empty disables Ableton")
 
 	err := flags.Parse(args)
 	return config, err
