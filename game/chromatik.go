@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/hypebeast/go-osc/osc"
-	"github.com/jsimonetti/go-artnet/packet"
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
 )
@@ -76,8 +75,8 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 			c.ArtNetDest, ip, c.ListenSubnet)
 	}
 
-	node := &net.UDPAddr{IP: c.ArtNetDest, Port: packet.ArtNetPort}
-	localAddr := &net.UDPAddr{IP: ip, Port: packet.ArtNetPort}
+	node := &net.UDPAddr{IP: c.ArtNetDest, Port: artnetPort}
+	localAddr := &net.UDPAddr{IP: ip, Port: artnetPort}
 
 	conn, err := net.ListenUDP("udp", localAddr)
 	if err != nil {
@@ -97,7 +96,7 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 // itself when dest is one of this machine's own addresses. It finds out by
 // connecting a UDP socket, which looks up the route and sends nothing.
 func localAddrFor(dest net.IP) (net.IP, error) {
-	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: dest, Port: packet.ArtNetPort})
+	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: dest, Port: artnetPort})
 	if err != nil {
 		return nil, fmt.Errorf("cannot find a local address to reach the Chromatik address %s (set with --chromatik); if the network is up, name the local subnet with --listen: %w", dest, err)
 	}
