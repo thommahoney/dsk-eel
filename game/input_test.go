@@ -342,10 +342,12 @@ func TestInputRace(t *testing.T) {
 			g.HandleControllerState(input(dir, controller.ButtonStatus(rng.IntN(32))))
 			states.Add(1)
 			// Nearly every button state pauses. Resume half of the time,
-			// so that games keep moving and come to an end.
+			// with a fresh press of white, so that games keep moving and
+			// come to an end.
 			if g.paused.Load() && rng.IntN(2) == 0 {
+				g.HandleControllerState(input(dir, controller.Btn_None))
 				g.HandleControllerState(input(dir, controller.Btn_White))
-				states.Add(1)
+				states.Add(2)
 			}
 		}
 	}()
