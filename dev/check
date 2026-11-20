@@ -33,6 +33,9 @@ gofmt_clean() {
 }
 
 step go build ./...
+# Fails, printing the difference, if go.mod or go.sum is not what
+# `go mod tidy` would write. Changes nothing.
+step go mod tidy -diff
 step go vet ./...
 step staticcheck ./...
 step gofmt_clean
