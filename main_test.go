@@ -115,3 +115,25 @@ func TestAbletonFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestOscDestFlag checks that --osc-dest is empty unless it is given. Empty
+// tells the game to send OSC to the --chromatik address.
+func TestOscDestFlag(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"not given", nil, ""},
+		{"given", []string{"--osc-dest", "10.0.0.7"}, "10.0.0.7"},
+	} {
+		flags := pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError)
+		cfg, err := parseFlags(flags, c.args)
+		if err != nil {
+			t.Fatalf("%s: parseFlags: %v", c.name, err)
+		}
+		if cfg.OscDest != c.want {
+			t.Errorf("%s: the OSC host is %q, want %q", c.name, cfg.OscDest, c.want)
+		}
+	}
+}

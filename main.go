@@ -23,7 +23,7 @@ func parseFlags(flags *pflag.FlagSet, args []string) (config.Config, error) {
 	flags.IPVar(&config.ArtNetDest, "chromatik", net.IPv4(127, 0, 0, 1), "IP address of Chromatik")
 	flags.StringVar(&config.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
 	flags.StringVar(&config.ListenSubnet, "listen", "", "Subnet of the local address to send Art-Net from, e.g. 10.0.0.0/24. Empty picks the address that reaches --chromatik; give it on a machine with more than one network")
-	flags.StringVar(&config.OscDest, "osc-dest", "127.0.0.1", "IP address of OSC server. Usually the same as --chromatik")
+	flags.StringVar(&config.OscDest, "osc-dest", "", "Host of Chromatik's OSC server. Empty, the default, uses the --chromatik address")
 	flags.IntVar(&config.OscPort, "osc-port", 3030, "Port of OSC server")
 	flags.StringVar(&config.AbletonDest, "ableton", "", "host:port of Ableton Live's OSC server (AbletonOSC), e.g. 192.168.1.104:11000. Empty, the default, sends nothing to Ableton")
 
