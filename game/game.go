@@ -47,6 +47,11 @@ type Game struct {
 	// each press. Only HandleButtonPress uses it, on the joystick goroutine.
 	buttonIndex int
 
+	// prevButtons is the buttons that were down in the previous joystick
+	// state, used to tell a button going down from one being held. Only
+	// HandleControllerState uses it, on the joystick goroutine.
+	prevButtons controller.ButtonStatus
+
 	// tick is the time between eel moves. Zero means MovementFrequency;
 	// tests set it lower so that whole games take milliseconds.
 	tick time.Duration
@@ -211,6 +216,16 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 
 	g.controlDir.Store(state.Direction)
 
+	// Buttons act once per press: only a state in which a button has gone
+	// down since the previous state counts. The controller also reports a
+	// state when the stick moves or a button is let go, and neither of
+	// those is a press of the buttons still held.
+	wentDown := state.ButtonStatus &^ g.prevButtons
+	g.prevButtons = state.ButtonStatus
+	if wentDown == controller.Btn_None {
+		return
+	}
+
 	// All five buttons held together does nothing.
 	if state.ButtonStatus&controller.Btn_Red > 0 &&
 		state.ButtonStatus&controller.Btn_Green > 0 &&
@@ -220,9 +235,42 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 		return
 	}
 
-	g.HandleButtonPress(state.ButtonStatus)
+	// The press is of the buttons that went down, not of everything that
+	// is held. A second button pressed before the first is let go (a rolled
+	// press) therefore acts as that button by itself, and the last button
+	// pressed is the one in effect.
+	//
+	// Buttons that go down in the same state are a press of one of them.
+	// Taken together they match no fader, so every channel would go to 0
+	// and stay there, with nothing showing, until the next press. A bit
+	// that is none of the five buttons is not a press at all.
+	g.HandleButtonPress(firstButton(wentDown))
 }
 
+// buttonOrder is the order in which firstButton looks for a button.
+var buttonOrder = [...]controller.ButtonStatus{
+	controller.Btn_Red,
+	controller.Btn_Green,
+	controller.Btn_Blue,
+	controller.Btn_Yellow,
+	controller.Btn_White,
+}
+
+// firstButton picks one button out of several: a color before white, and
+// the colors in the order red, green, blue, yellow. It returns Btn_None
+// if none of the five is set.
+func firstButton(buttons controller.ButtonStatus) controller.ButtonStatus {
+	for _, b := range buttonOrder {
+		if buttons&b != 0 {
+			return b
+		}
+	}
+	return controller.Btn_None
+}
+
+// HandleButtonPress runs the action of a button. HandleControllerState
+// always passes it a single button, so what it does with several at once
+// is only reached by calling it directly.
 func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 	if status == controller.Btn_None {
 		// No-Op
