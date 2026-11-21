@@ -2,9 +2,9 @@ package game
 
 import (
 	"fmt"
-	"math"
 	"math/rand/v2"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/thommahoney/dsk-eel/config"
@@ -21,19 +21,35 @@ const (
 
 // Tracks game state
 type Game struct {
-	Ableton      *Ableton
-	Brightness   float64
-	Chromatik    *Chromatik
-	Config       *config.Config
-	Controller   *controller.Controller
-	DemoMode     bool // actually respected, Config.DemoMode is intention
-	Eel          *Eel
-	Food         *Food
-	MoverTicker  *time.Ticker
-	Paused       bool
-	PrimaryColor Color
-	QuitChan     chan struct{}
-	Segments     [SegmentCount]*Segment
+	Ableton    *Ableton
+	Brightness float64
+	Chromatik  *Chromatik
+	Config     *config.Config
+	Controller *controller.Controller
+	Eel        *Eel
+	Food       *Food
+	Segments   [SegmentCount]*Segment
+
+	// Input state. The joystick goroutine writes it in HandleControllerState
+	// and the game loop reads it, at any time: before the first game, during
+	// a game and between games. It belongs to the Game and not to one Eel, so
+	// what the player is doing carries over from one game to the next.
+	//
+	// controlDir is the direction the stick is held in right now.
+	// demoMode is whether the eel steers itself at junctions; Run sets it
+	// from Config.DemoMode for every game and the first input clears it.
+	// paused stops Mover from advancing the game.
+	controlDir heldDirection
+	demoMode   atomic.Bool
+	paused     atomic.Bool
+
+	// buttonIndex alternates between the two faders of a colored button on
+	// each press. Only HandleButtonPress uses it, on the joystick goroutine.
+	buttonIndex int
+
+	// tick is the time between eel moves. Zero means MovementFrequency;
+	// tests set it lower so that whole games take milliseconds.
+	tick time.Duration
 
 	// Render state. Only one goroutine touches it at a time: Mover while a
 	// game is being played, then GameOverAnimation, which Mover starts as
@@ -54,9 +70,8 @@ type Game struct {
 
 func NewGame(config *config.Config) (*Game, error) {
 	game := &Game{
-		Brightness:   1.0,
-		Config:       config,
-		PrimaryColor: RandomColor(),
+		Brightness: 1.0,
+		Config:     config,
 	}
 
 	err := game.Init()
@@ -89,10 +104,9 @@ func (g *Game) Run() {
 	g.brightnessIncrement = -0.05
 
 	// reset demo mode to configured value
-	g.DemoMode = g.Config.DemoMode
+	g.demoMode.Store(g.Config.DemoMode)
 
 	var wg sync.WaitGroup
-	g.QuitChan = make(chan struct{})
 
 	g.Ableton.FireScene(0)
 
@@ -105,47 +119,54 @@ func (g *Game) Run() {
 func (g *Game) GameOver() {
 	g.Config.Logger.Info("GameOver")
 	g.Ableton.FireScene(7)
-	close(g.QuitChan)
 }
 
+// Pause stops the eel. It may be called from any goroutine at any time;
+// Mover looks at the flag on every tick, so a pause requested between games
+// holds the next game still from its first tick.
 func (g *Game) Pause() {
-	// max duration of 270 years or something
-	g.MoverTicker.Reset(math.MaxInt64 * time.Nanosecond)
-	g.Paused = true
+	g.paused.Store(true)
 }
 
+// Resume lets the eel move again from the next tick.
 func (g *Game) Resume() {
-	g.MoverTicker.Reset(MovementFrequency)
-	g.Paused = false
+	g.paused.Store(false)
+}
+
+// tickInterval is the time between eel moves.
+func (g *Game) tickInterval() time.Duration {
+	if g.tick > 0 {
+		return g.tick
+	}
+	return MovementFrequency
 }
 
 // Mover calls Eel.Move() on an interval and steps the breathing brightness
 // before each move. When the eel dies it hands over to GameOverAnimation.
+// While the game is paused the ticks pass with nothing done: the eel does
+// not move, no frame is sent and the brightness stays where it is.
 func (g *Game) Mover(wg *sync.WaitGroup) {
 	defer wg.Done()
-	g.MoverTicker = time.NewTicker(MovementFrequency)
-	defer g.MoverTicker.Stop()
+	ticker := time.NewTicker(g.tickInterval())
+	defer ticker.Stop()
 
-	for {
-		select {
-		case <-g.MoverTicker.C:
-			g.Brightness += g.brightnessIncrement
-			if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
-				g.brightnessIncrement = -g.brightnessIncrement
-			}
+	for range ticker.C {
+		if g.paused.Load() {
+			continue
+		}
 
-			err := g.Eel.Move()
-			if err != nil {
-				g.Config.Logger.Info("Mover sent game over", "err", err)
-				g.Brightness = 1.0
-				g.GameOver()
-				wg.Add(1)
-				go g.GameOverAnimation(wg)
-				return
-			}
+		g.Brightness += g.brightnessIncrement
+		if g.Brightness <= MinBrightness || g.Brightness >= MaxBrightness {
+			g.brightnessIncrement = -g.brightnessIncrement
+		}
 
-		case <-g.QuitChan:
-			g.Config.Logger.Info("Mover received quit")
+		err := g.Eel.Move()
+		if err != nil {
+			g.Config.Logger.Info("Mover sent game over", "err", err)
+			g.Brightness = 1.0
+			g.GameOver()
+			wg.Add(1)
+			go g.GameOverAnimation(wg)
 			return
 		}
 	}
@@ -154,7 +175,7 @@ func (g *Game) Mover(wg *sync.WaitGroup) {
 func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	ticker := time.NewTicker(MovementFrequency * 2)
+	ticker := time.NewTicker(g.tickInterval() * 2)
 	defer ticker.Stop()
 
 	increment := -0.05
@@ -175,24 +196,27 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 	}
 }
 
+// HandleControllerState takes a new joystick state. The controller calls it
+// on its own goroutine, one call at a time, whenever the state changes, and
+// that can be at any moment: before the first game, in the middle of a tick
+// or between games. It only touches the input state on Game, which the game
+// loop reads with atomic loads, and never the eel or the frame.
 func (g *Game) HandleControllerState(state controller.ControllerState) {
 	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
 
-	if g.DemoMode {
+	if g.demoMode.CompareAndSwap(true, false) {
 		// we have a contender!
 		g.Config.Logger.Info("HandleControllerState setting DemoMode = false")
-		g.DemoMode = false
 	}
 
-	g.Eel.ControlDir = state.Direction
+	g.controlDir.Store(state.Direction)
 
-	// special case for all buttons held (black is drawn as a rainbow)
+	// All five buttons held together does nothing.
 	if state.ButtonStatus&controller.Btn_Red > 0 &&
 		state.ButtonStatus&controller.Btn_Green > 0 &&
 		state.ButtonStatus&controller.Btn_Blue > 0 &&
 		state.ButtonStatus&controller.Btn_Yellow > 0 &&
 		state.ButtonStatus&controller.Btn_White > 0 {
-		g.PrimaryColor = Black
 		return
 	}
 
@@ -207,15 +231,15 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 
 	// @todo add back an easter egg for multiple buttons pressed
 
-	buttonIndex += 1
-	if buttonIndex >= 2 {
-		buttonIndex = 0
+	g.buttonIndex += 1
+	if g.buttonIndex >= 2 {
+		g.buttonIndex = 0
 	}
 
 	for bs, addrs := range buttonToOSCAddress {
 		for idx, a := range addrs {
 			val := float32(0.0)
-			if bs == status && (idx == buttonIndex || status == controller.Btn_White) {
+			if bs == status && (idx == g.buttonIndex || status == controller.Btn_White) {
 				val = 1.0
 			}
 
@@ -228,7 +252,9 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 	}
 
 	if status == controller.Btn_White {
-		if g.Paused {
+		// Only this goroutine writes the flag, so reading it and then
+		// setting it cannot lose an update.
+		if g.paused.Load() {
 			g.Resume()
 		} else {
 			g.Pause()
