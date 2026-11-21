@@ -31,17 +31,23 @@ type Game struct {
 	Segments   [SegmentCount]*Segment
 
 	// Input state. The joystick goroutine writes it in HandleControllerState
-	// and the game loop reads it, at any time: before the first game, during
-	// a game and between games. It belongs to the Game and not to one Eel, so
-	// what the player is doing carries over from one game to the next.
+	// and HandleControllerLost, and the game loop reads it, at any time:
+	// before the first game, during a game and between games. It belongs to
+	// the Game and not to one Eel, so what the player is doing carries over
+	// from one game to the next.
 	//
 	// controlDir is the direction the stick is held in right now.
-	// demoMode is whether the eel steers itself at junctions; Run sets it
-	// from Config.DemoMode for every game and the first input clears it.
+	// demoMode is whether this game is a demo, in which the eel steers
+	// itself at junctions; Run sets it from Config.DemoMode for every game
+	// and the first input clears it.
+	// joystickLost is set when the joystick is lost, which makes every
+	// game a demo whatever the configuration says. It is cleared by the
+	// first input from a joystick that has come back, not by its return.
 	// paused stops Mover from advancing the game.
-	controlDir heldDirection
-	demoMode   atomic.Bool
-	paused     atomic.Bool
+	controlDir   heldDirection
+	demoMode     atomic.Bool
+	joystickLost atomic.Bool
+	paused       atomic.Bool
 
 	// buttonIndex alternates between the two faders of a colored button on
 	// each press. Only HandleButtonPress uses it, on the joystick goroutine.
@@ -49,7 +55,8 @@ type Game struct {
 
 	// prevButtons is the buttons that were down in the previous joystick
 	// state, used to tell a button going down from one being held. Only
-	// HandleControllerState uses it, on the joystick goroutine.
+	// HandleControllerState and HandleControllerLost use it, on the
+	// joystick goroutine.
 	prevButtons controller.ButtonStatus
 
 	// tick is the time between eel moves. Zero means MovementFrequency;
@@ -85,7 +92,7 @@ func NewGame(config *config.Config) (*Game, error) {
 	}
 
 	if !game.Config.NoJoy {
-		c, err := controller.NewController(config, game.HandleControllerState)
+		c, err := controller.NewController(config, game.HandleControllerState, game.HandleControllerLost)
 		if err != nil {
 			return nil, fmt.Errorf("error in NewController: %s", err)
 		}
@@ -201,6 +208,28 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 	}
 }
 
+// inDemoMode reports whether the eel steers itself at junctions while the
+// stick is neutral: in a demo game, and in any game from the loss of the
+// joystick until the first input after it is back.
+func (g *Game) inDemoMode() bool {
+	return g.demoMode.Load() || g.joystickLost.Load()
+}
+
+// HandleControllerLost is called by the controller, on its goroutine, when
+// the joystick stops answering. The game carries on in demo mode with
+// nothing held, until the first input from a joystick that has come back;
+// that input ends demo mode the way any first input does. Pause is left as
+// it is.
+func (g *Game) HandleControllerLost() {
+	// The flag goes first, so that a tick never sees the stick let go
+	// without also seeing demo mode, which would end the game at a junction.
+	if !g.joystickLost.Swap(true) {
+		g.Config.Logger.Warn("joystick lost: running in demo mode until it is back and someone uses it")
+	}
+	g.controlDir.Store(controller.Dir_Neutral)
+	g.prevButtons = controller.Btn_None
+}
+
 // HandleControllerState takes a new joystick state. The controller calls it
 // on its own goroutine, one call at a time, whenever the state changes, and
 // that can be at any moment: before the first game, in the middle of a tick
@@ -209,12 +238,17 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 func (g *Game) HandleControllerState(state controller.ControllerState) {
 	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
 
-	if g.demoMode.CompareAndSwap(true, false) {
+	// The direction goes first, so that a tick never sees demo mode ended
+	// before it sees the direction that ended it: with the stick still
+	// neutral, that would end the game at a junction.
+	g.controlDir.Store(state.Direction)
+
+	wasLost := g.joystickLost.Swap(false)
+	wasDemo := g.demoMode.Swap(false)
+	if wasLost || wasDemo {
 		// we have a contender!
 		g.Config.Logger.Info("HandleControllerState setting DemoMode = false")
 	}
-
-	g.controlDir.Store(state.Direction)
 
 	// Buttons act once per press: only a state in which a button has gone
 	// down since the previous state counts. The controller also reports a
