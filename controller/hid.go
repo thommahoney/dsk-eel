@@ -1,6 +1,13 @@
+//go:build cgo
+
 package controller
 
 import "github.com/sstallion/go-hid"
+
+// HasJoystick says whether this build can open the joystick. go-hid is C
+// code underneath, so a build made without a C compiler (CGO_ENABLED=0)
+// has to do without it: see hid_nocgo.go.
+const HasJoystick = true
 
 // hidDevice is a joystick opened through go-hid.
 type hidDevice struct {

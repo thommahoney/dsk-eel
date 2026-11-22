@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/thommahoney/dsk-eel/config"
+	"github.com/thommahoney/dsk-eel/controller"
 	"github.com/thommahoney/dsk-eel/game"
 )
 
@@ -16,10 +17,15 @@ import (
 // when it is linked (see dev/release); any other build says "dev".
 var version = "dev"
 
-// versionLine is what --version prints: the build, and the Go release and
-// the system it was built with and for.
+// versionLine is what --version prints: the build, the Go release and the
+// system it was built with and for, and whether it is a build that cannot
+// open the joystick.
 func versionLine() string {
-	return fmt.Sprintf("dsk-eel %s (%s, %s/%s)", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	line := fmt.Sprintf("dsk-eel %s (%s, %s/%s", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	if !controller.HasJoystick {
+		line += ", keyboard only"
+	}
+	return line + ")"
 }
 
 func main() {

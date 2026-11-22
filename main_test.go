@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/thommahoney/dsk-eel/controller"
 )
 
 // TestNewLogger: without -v only warnings and errors are logged, -v adds
@@ -35,8 +37,13 @@ func TestNewLogger(t *testing.T) {
 // TestVersionLine: the line --version prints names the build, the Go
 // release and the system.
 func TestVersionLine(t *testing.T) {
-	// A build that was not given a name says "dev".
-	want := "dsk-eel dev (" + runtime.Version() + ", " + runtime.GOOS + "/" + runtime.GOARCH + ")"
+	// A build that was not given a name says "dev". One made without a C
+	// compiler cannot open the joystick, and says that too.
+	want := "dsk-eel dev (" + runtime.Version() + ", " + runtime.GOOS + "/" + runtime.GOARCH
+	if !controller.HasJoystick {
+		want += ", keyboard only"
+	}
+	want += ")"
 	if got := versionLine(); got != want {
 		t.Errorf("versionLine() = %q, want %q", got, want)
 	}
