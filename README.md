@@ -22,7 +22,7 @@ dev/run go test ./...    # any command, run in the container
 dev/run                  # interactive shell
 ```
 
-`dev/run` builds the image on first use and again whenever the Dockerfile changes. The checkout is mounted at `/src`, and the Go caches are kept in the `dsk-eel-dev-cache` volume. Set `GO_VERSION` to try a different toolchain, for example `GO_VERSION=1.23 dev/run check` to confirm the minimum version in `go.mod` still builds.
+`dev/run` builds the image on first use and again whenever the Dockerfile changes. The checkout is mounted at `/src`, and the Go caches are kept in the `dsk-eel-dev-cache` volume. The image's Go version and the `go` line in `go.mod` name the same release; bump them together. Set `GO_VERSION` to try a newer one first, for example `GO_VERSION=1.28 dev/run check`.
 
 Every pull request and every push to `main` runs `dev/run check` and `dev/run smoke` in GitHub Actions ([.github/workflows/checks.yml](./.github/workflows/checks.yml)), in the same image, on an arm64 runner. `main` is protected: a pull request can only be merged once that `check` job has passed.
 
@@ -61,9 +61,11 @@ A terminal reports that a key was pressed but not that it was let go, so this is
 
 This game was developed using a basic Ubuntu virtual machine with go installed.
 
+It needs the Go release named on the `go` line of [go.mod](./go.mod), or a newer one. `go version` shows what is installed. A distribution's own package is often older than that; the installers at <https://go.dev/dl/> are always current.
+
 ```bash
 sudo apt-get install libudev-dev
-# If you're on an older version of ubuntu
+# Go from the distribution, if it is new enough:
 # sudo add-apt-repository ppa:longsleep/golang-backports
 # sudo apt update
 sudo apt install golang-go

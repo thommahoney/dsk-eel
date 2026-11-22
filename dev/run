@@ -22,7 +22,8 @@
 #
 # Environment:
 #   GO_VERSION           golang image version to use instead of the
-#                        Dockerfile default, e.g. GO_VERSION=1.23
+#                        Dockerfile default, to try a newer release. One
+#                        older than go.mod's `go` line will not build.
 #   DOCKER               container CLI to call (default: docker)
 #   DSK_EEL_DOCKER_ARGS  extra `docker run` arguments, split on spaces. On a
 #                        Linux host with the hardware attached, for example:
