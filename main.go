@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"net"
 	"os"
 	"runtime"
 
@@ -23,42 +22,22 @@ func versionLine() string {
 	return fmt.Sprintf("dsk-eel %s (%s, %s/%s)", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
 
-// parseFlags registers the command line flags on the given flag set, parses
-// args with it and returns the resulting configuration. main passes
-// pflag.CommandLine; tests pass a flag set of their own.
-func parseFlags(flags *pflag.FlagSet, args []string) (config.Config, error) {
-	config := config.Config{}
-
-	flags.BoolVar(&config.DemoMode, "demo", false, "Randomly move eel")
-	flags.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
-	flags.BoolVar(&config.Keyboard, "keyboard", false, "Steer with the keyboard of this terminal instead of the joystick: arrow keys (the direction stays held), space to centre the stick, r g b y w for the buttons, q to quit")
-	flags.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
-	flags.BoolVar(&config.PrintVersion, "version", false, "Print which build this is and exit")
-	flags.IPVar(&config.ArtNetDest, "chromatik", net.IPv4(127, 0, 0, 1), "IP address of Chromatik")
-	flags.StringVar(&config.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
-	flags.StringVar(&config.ListenSubnet, "listen", "", "Subnet of the local address to send Art-Net from, e.g. 10.0.0.0/24. Empty picks the address that reaches --chromatik; give it on a machine with more than one network")
-	flags.StringVar(&config.OscDest, "osc-dest", "", "Host of Chromatik's OSC server. Empty, the default, uses the --chromatik address")
-	flags.IntVar(&config.OscPort, "osc-port", 3030, "Port of OSC server")
-	flags.StringVar(&config.AbletonDest, "ableton", "", "host:port of Ableton Live's OSC server (AbletonOSC), e.g. 192.168.1.104:11000. Empty, the default, sends nothing to Ableton")
-
-	err := flags.Parse(args)
-	return config, err
-}
-
 func main() {
-	config, err := parseFlags(pflag.CommandLine, os.Args[1:])
+	cfg, err := config.Parse(pflag.CommandLine, os.Args[1:])
 	if err != nil {
-		log.Fatalf("invalid arguments: %s", err)
+		// The exit status an unknown flag gets from the flag library.
+		fmt.Fprintf(os.Stderr, "invalid arguments: %s\n", err)
+		os.Exit(2)
 	}
 
-	if config.PrintVersion {
+	if cfg.PrintVersion {
 		fmt.Println(versionLine())
 		return
 	}
 
-	config.Logger = NewLogger(config.Verbosity)
+	cfg.Logger = NewLogger(cfg.Verbosity)
 
-	game, err := game.NewGame(&config)
+	game, err := game.NewGame(&cfg)
 	if err != nil {
 		log.Fatalf("NewGame failure: %s", err)
 	}
@@ -68,6 +47,8 @@ func main() {
 	}
 }
 
+// NewLogger returns the program's logger: warnings and errors by default,
+// information as well with -v, and everything with -vv or more.
 func NewLogger(verbosity int) *slog.Logger {
 	logLevel := slog.LevelWarn
 	if verbosity > 2 {
