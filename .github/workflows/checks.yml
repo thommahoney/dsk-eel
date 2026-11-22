@@ -21,8 +21,8 @@ concurrency:
 
 jobs:
   # Branch protection on main requires status checks by job name: this one,
-  # "check (macos)" and "release build" below. Renaming one of those jobs
-  # means updating that rule as well.
+  # "check (macos)", "check (windows)" and "release build" below. Renaming
+  # one of those jobs means updating that rule as well.
   check:
     name: check
     # arm64, like the machine at the dome and the dev container on an Apple
@@ -82,6 +82,48 @@ jobs:
       - name: Build the release binary
         run: sh dev/release "$(TZ=UTC git show -s --date=format-local:%Y-%m-%d --format=%cd HEAD)-$(git rev-parse --short HEAD)"
 
+  # The same code on Windows: built and tested with the Go release go.mod
+  # names. The runner has a C compiler, so the first step includes the
+  # joystick library and the race detector; the second is the build without
+  # one, which is the kind the Windows release binary is. This job is
+  # required for merging, and like the macOS one it does not hold up the
+  # release for the dome.
+  check-windows:
+    name: check (windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build, vet and test
+        run: |
+          gcc --version | head -1
+          go build ./...
+          go vet ./...
+          go test -race -count=1 ./...
+
+      - name: Build and test without a C compiler
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build ./...
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Build the release binary
+        env:
+          CGO_ENABLED: "0"
+        run: sh dev/release "$(TZ=UTC git show -s --date=format-local:%Y-%m-%d --format=%cd HEAD)-$(git rev-parse --short HEAD)"
+
   # The binary a release carries is built with dev/run release for every
   # run, so a pull request that breaks that build cannot be merged: this
   # job is required, like check. It is the pull request's half: it builds
@@ -102,6 +144,11 @@ jobs:
 
       - name: Build the release binary
         run: dev/run release "$BUILD"
+
+      # Built here, from Linux and without the C compiler: a Windows binary
+      # that plays from the keyboard and needs nothing installed to run.
+      - name: Build the Windows release binary
+        run: dev/run env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 sh dev/release "$BUILD"
 
   # A push to main, which is what merging a pull request is, builds the same
   # binary from what is now on main and publishes it as a release, once the
@@ -128,6 +175,11 @@ jobs:
 
       - name: Build the release binary
         run: dev/run release "$BUILD"
+
+      # Built here, from Linux and without the C compiler: a Windows binary
+      # that plays from the keyboard and needs nothing installed to run.
+      - name: Build the Windows release binary
+        run: dev/run env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 sh dev/release "$BUILD"
 
       - name: Publish the release
         env:
@@ -156,6 +208,7 @@ jobs:
 
           gh release create "$BUILD" \
             dist/dsk-eel-linux-arm64 dist/dsk-eel-linux-arm64.sha256 \
+            dist/dsk-eel-windows-amd64.exe dist/dsk-eel-windows-amd64.exe.sha256 \
             --target "$GITHUB_SHA" \
             --title "$BUILD" \
             --generate-notes \

@@ -14,6 +14,12 @@
 #
 # version is what `dsk-eel --version` will say. CI passes the name of the
 # release; a build made by hand says "dev" unless told otherwise.
+#
+# GOOS, GOARCH and CGO_ENABLED choose another kind of build, as they do for
+# the go command. The Windows binary is made that way, from Linux and
+# without the C compiler, so it plays from the keyboard only:
+#
+#   dev/run env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 sh dev/release [version]
 set -eu
 
 if [ $# -gt 1 ]; then
@@ -30,7 +36,8 @@ case $version in
 esac
 cd -- "$(dirname -- "$0")/.."
 
-name=dsk-eel-$(go env GOOS)-$(go env GOARCH)
+# GOEXE is .exe on Windows and nothing elsewhere.
+name=dsk-eel-$(go env GOOS)-$(go env GOARCH)$(go env GOEXE)
 mkdir -p dist
 
 # -trimpath keeps this checkout's directory out of the binary, and -s -w
@@ -46,5 +53,8 @@ else
 fi
 
 echo "==> built dist/$name" >&2
-"dist/$name" --version >&2
+# A binary for another system cannot be run here to ask it.
+if [ "$(go env GOOS)/$(go env GOARCH)" = "$(go env GOHOSTOS)/$(go env GOHOSTARCH)" ]; then
+	"dist/$name" --version >&2
+fi
 cat "dist/$name.sha256" >&2

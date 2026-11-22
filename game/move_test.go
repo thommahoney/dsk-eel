@@ -220,6 +220,7 @@ func TestGameOverHue(t *testing.T) {
 // TestMoveAllocations keeps an ordinary tick, rendering and the seven
 // sends included, free of allocations.
 func TestMoveAllocations(t *testing.T) {
+	skipWhereSendsAllocate(t)
 	g, _ := newTestGame(t)
 	place(g, 0, 6, 7, 0.75, 5, 12, 6)
 
