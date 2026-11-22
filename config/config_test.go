@@ -81,6 +81,10 @@ func TestEachFlag(t *testing.T) {
 		{[]string{"--chromatik", "10.0.0.5"}, func(c *Config) { c.ArtNetDest = net.IPv4(10, 0, 0, 5) }},
 		{[]string{"--chromatik=10.0.0.5"}, func(c *Config) { c.ArtNetDest = net.IPv4(10, 0, 0, 5) }},
 		{[]string{"--chromatik", "fd00::5"}, func(c *Config) { c.ArtNetDest = net.ParseIP("fd00::5") }},
+		// A host name is looked up when the flag is read, and stands for
+		// its IPv4 address if it has one.
+		{[]string{"--chromatik", "localhost"}, func(c *Config) { c.ArtNetDest = net.IPv4(127, 0, 0, 1) }},
+		{[]string{"--chromatik=localhost"}, func(c *Config) { c.ArtNetDest = net.IPv4(127, 0, 0, 1) }},
 		{[]string{"--joystick", "/dev/hidraw0"}, func(c *Config) { c.ControllerPath = "/dev/hidraw0" }},
 		{[]string{"--joystick=/dev/hidraw0"}, func(c *Config) { c.ControllerPath = "/dev/hidraw0" }},
 		{[]string{"--listen", "10.0.0.0/24"}, func(c *Config) { c.ListenSubnet = "10.0.0.0/24" }},
@@ -140,9 +144,10 @@ func TestBadArguments(t *testing.T) {
 	}{
 		{[]string{"--nope"}, "nope"},
 		{[]string{"-x"}, "x"},
-		{[]string{"--chromatik", "not-an-address"}, "chromatik"},
-		{[]string{"--chromatik", "10.0.0"}, "chromatik"},
-		{[]string{"--chromatik", "chromatik.local"}, "chromatik"},
+		// Names under .invalid are reserved never to exist.
+		{[]string{"--chromatik", "chromatik.invalid"}, `"chromatik.invalid"`},
+		{[]string{"--chromatik", "not an address.invalid"}, "--chromatik"},
+		{[]string{"--chromatik", ""}, "--chromatik"},
 		{[]string{"--chromatik"}, "chromatik"},
 		{[]string{"--osc-port", "abc"}, "osc-port"},
 		{[]string{"--osc-port", "30.5"}, "osc-port"},
@@ -186,7 +191,7 @@ func TestEveryFieldHasOneFlag(t *testing.T) {
 		"bool":   "true",
 		"count":  "3",
 		"int":    "4711",
-		"ip":     "192.0.2.9",
+		"host":   "192.0.2.9",
 		"string": "something-else",
 	}
 

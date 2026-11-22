@@ -1,10 +1,12 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"time"
 
 	"github.com/spf13/pflag"
 )
@@ -47,7 +49,8 @@ func Parse(flags *pflag.FlagSet, args []string) (Config, error) {
 	flags.BoolVar(&cfg.Keyboard, "keyboard", false, "Steer with the keyboard of this terminal instead of the joystick: arrow keys (the direction stays held), space to centre the stick, r g b y w for the buttons, q to quit")
 	flags.CountVarP(&cfg.Verbosity, "verbose", "v", "Log more: -v adds what the game is doing, -vv adds everything")
 	flags.BoolVar(&cfg.PrintVersion, "version", false, "Print which build this is and exit")
-	flags.IPVar(&cfg.ArtNetDest, "chromatik", net.IPv4(127, 0, 0, 1), "IP address of Chromatik")
+	cfg.ArtNetDest = net.IPv4(127, 0, 0, 1)
+	flags.Var(&hostValue{ip: &cfg.ArtNetDest}, "chromatik", "Address or host name of the machine Chromatik runs on")
 	flags.StringVar(&cfg.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
 	flags.StringVar(&cfg.ListenSubnet, "listen", "", "Subnet of the local address to send Art-Net from, e.g. 10.0.0.0/24. Empty picks the address that reaches --chromatik; give it on a machine with more than one network")
 	flags.StringVar(&cfg.OscDest, "osc-dest", "", "Host of Chromatik's OSC server. Empty, the default, uses the --chromatik address")
@@ -68,4 +71,48 @@ func Parse(flags *pflag.FlagSet, args []string) (Config, error) {
 		return cfg, errors.New("--joystick needs the path of the joystick's device; to run without the joystick use --keyboard, or --nojoy --demo")
 	}
 	return cfg, nil
+}
+
+// hostLookupTimeout is how long --chromatik waits for a name to be looked
+// up before it gives up.
+const hostLookupTimeout = 5 * time.Second
+
+// hostValue is the value of a flag that takes an address or a host name.
+// A name is looked up once, when the flag is read, and what is kept is the
+// address: the program sends to that address for as long as it runs. A
+// name that cannot be found is an error there and then, like any other
+// value a flag cannot take.
+type hostValue struct {
+	ip *net.IP
+}
+
+func (h *hostValue) String() string {
+	if h.ip == nil || *h.ip == nil {
+		return ""
+	}
+	return h.ip.String()
+}
+
+func (h *hostValue) Type() string { return "host" }
+
+func (h *hostValue) Set(value string) error {
+	if ip := net.ParseIP(value); ip != nil {
+		*h.ip = ip
+		return nil
+	}
+	if value == "" {
+		return errors.New("an address or a host name is needed")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), hostLookupTimeout)
+	defer cancel()
+	// Art-Net is at home on IPv4, so that is what a name with both kinds
+	// of address stands for.
+	for _, network := range []string{"ip4", "ip6"} {
+		if ips, err := net.DefaultResolver.LookupIP(ctx, network, value); err == nil && len(ips) > 0 {
+			*h.ip = ips[0]
+			return nil
+		}
+	}
+	return fmt.Errorf("%q is not an address, and no host of that name could be found", value)
 }
