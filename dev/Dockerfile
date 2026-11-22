@@ -30,15 +30,21 @@ ARG BENCHSTAT_VERSION=v0.0.0-20261117185222-4febdb082b2c
 RUN export GOBIN=/usr/local/bin GOTOOLCHAIN=auto \
     && go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION} \
     && go install golang.org/x/perf/cmd/benchstat@${BENCHSTAT_VERSION} \
-    && go clean -cache -modcache
+    && go clean -cache -modcache \
+    && rm -rf "$(go env GOPATH)/pkg"
 
 # dev/run starts the container as the host user so files written to the
 # checkout are not root-owned, so the cache volume must be writable by
 # whichever uid uses it first. A new named volume inherits this directory's
 # mode. One volume is not meant to be shared between different uids.
+#
+# GOPATH is there too. The go command keeps what it knows of the checksum
+# database under it, and has to be able to write that to add or update a
+# dependency (`go get`); the image's own GOPATH belongs to root.
 RUN mkdir -m 1777 /cache
 ENV GOCACHE=/cache/go-build \
     GOMODCACHE=/cache/mod \
+    GOPATH=/cache/gopath \
     GOFLAGS=-buildvcs=false
 
 WORKDIR /src

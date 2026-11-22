@@ -1,0 +1,18 @@
+# Dependabot opens a pull request when a Go module or a GitHub Action this
+# repository uses has a new release. Each one runs the checks like any other
+# pull request and is merged, or closed, by hand.
+#
+# Go itself is not covered: its version is in dev/Dockerfile and on the `go`
+# line of go.mod, which are bumped together. Nor are the lint tools pinned in
+# dev/Dockerfile.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

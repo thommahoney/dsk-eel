@@ -26,6 +26,8 @@ dev/run                  # interactive shell
 
 Every pull request and every push to `main` runs `dev/run check` and `dev/run smoke` in GitHub Actions ([.github/workflows/checks.yml](./.github/workflows/checks.yml)), in the same image, on an arm64 runner. `main` is protected: a pull request can only be merged once that `check` job has passed.
 
+Dependabot ([.github/dependabot.yml](./.github/dependabot.yml)) opens a pull request each month for any Go module or GitHub Action with a new release. To update by hand: `dev/run go get -u ./...`, then `dev/run go mod tidy`. Go itself and the lint tools are pinned in [dev/Dockerfile](./dev/Dockerfile).
+
 Things to know:
 
 - The checkout, and any git worktree of it, must be somewhere the container runtime shares with its VM. With Colima's defaults that is only `$HOME`, so not `/tmp`.
