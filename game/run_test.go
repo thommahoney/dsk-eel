@@ -15,7 +15,7 @@ import (
 func TestRunPlaysOneGame(t *testing.T) {
 	g, sink := newTestGame(t)
 
-	for game := 0; game < 2; game++ {
+	for game := range 2 {
 		done := make(chan struct{})
 		go func() {
 			g.Run()

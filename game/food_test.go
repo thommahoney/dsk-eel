@@ -47,7 +47,7 @@ func headFirst(pixels []int, head int) []int {
 // pixelsWhere returns the pixels for which keep is true, in order.
 func pixelsWhere(keep func(px int) bool) []int {
 	var pixels []int
-	for px := 0; px < testPixels; px++ {
+	for px := range testPixels {
 		if keep(px) {
 			pixels = append(pixels, px)
 		}
@@ -73,7 +73,7 @@ func walkedEel(t *testing.T, g *Game, n int) ([]*Point, Direction) {
 	// A random path can box itself in before it is long enough, so try
 	// again until one fits. For the lengths the tests use, a few attempts
 	// are enough; the limit only stops a broken graph from looping forever.
-	for attempt := 0; attempt < 100000; attempt++ {
+	for range 100000 {
 		var taken [testPixels]bool
 		var path []*Point
 		seg, pos, dir := g.Segments[rand.N(testSegments)], rand.N(testSegmentLength), Direction(rand.N(2))
@@ -126,7 +126,7 @@ func coveredPixels(points []*Point) (covered [testPixels]bool) {
 // the food's first point.
 func freeFoodPlacements(covered [testPixels]bool) []int {
 	var free []int
-	for seg := 0; seg < testSegments; seg++ {
+	for seg := range testSegments {
 	next:
 		for start := testFoodLength - 1; start < testSegmentLength; start++ {
 			for pos := start; pos > start-testFoodLength; pos-- {
@@ -175,7 +175,7 @@ func allowedFoodPlacements(eel *Eel) []int {
 	}
 	block := func(pixels [testPixels]bool, segments ...*Segment) [testPixels]bool {
 		for _, seg := range segments {
-			for pos := 0; pos < testSegmentLength; pos++ {
+			for pos := range testSegmentLength {
 				pixels[seg.Offset+pos] = true
 			}
 		}
@@ -439,7 +439,7 @@ func TestNewFoodAvoidsEel(t *testing.T) {
 func TestNewFoodWithoutAnEel(t *testing.T) {
 	g, _ := newTestGame(t)
 	seen := map[int]bool{}
-	for i := 0; i < 40000; i++ {
+	for range 40000 {
 		seen[checkFoodShape(t, g, NewFood(g))] = true
 	}
 	if len(seen) != testPlacements {
@@ -453,7 +453,7 @@ func TestNewFoodWithAnEmptyEel(t *testing.T) {
 	g, _ := newTestGame(t)
 	g.Eel = &Eel{Game: g}
 	seen := map[int]bool{}
-	for i := 0; i < 40000; i++ {
+	for range 40000 {
 		seen[checkFoodShape(t, g, NewFood(g))] = true
 	}
 	if len(seen) != testPlacements {
@@ -471,7 +471,7 @@ func TestNewFoodAfterCrossingAJunction(t *testing.T) {
 	g.demoMode.Store(true)
 
 	onSegmentLeft := 0
-	for i := 0; i < 3000; i++ {
+	for i := range 3000 {
 		// Head on the last pixel of segment 0; the old food is far away.
 		place(g, 0, testSegmentLength-1, testFoodLength, 1.0, 30, 12, 6)
 		old := g.Food
@@ -541,7 +541,7 @@ func TestNewFoodScanPicksEvenly(t *testing.T) {
 
 	const calls = 20000
 	seen := map[int]int{}
-	for i := 0; i < calls; i++ {
+	for range calls {
 		seen[checkFoodShape(t, g, NewFood(g))]++
 	}
 	for _, placement := range allowed {
@@ -568,7 +568,7 @@ func TestRunMakesTheFoodAfterTheEel(t *testing.T) {
 	g, sink := newTestGame(t)
 	g.tick = fastTick
 
-	for game := 0; game < 100; game++ {
+	for game := range 100 {
 		waitGameOver(t, startGame(g))
 		// The frames are not looked at; keep the socket from filling up.
 		sink.drain(time.Millisecond)
@@ -603,7 +603,7 @@ func TestNewFoodIsNeverOneJunctionAhead(t *testing.T) {
 			}
 			// Without the rule a food lands on a given segment once in
 			// 48 calls, and never in 500 with probability e^-10.
-			for i := 0; i < 500; i++ {
+			for range 500 {
 				on := NewFood(g).Body[0].Segment
 				if on == segment || slices.Contains(ahead, on) {
 					t.Fatalf("head on the last pixel of %s, %s: new food on %s", segment.Label, towards(dir), on.Label)
@@ -647,7 +647,7 @@ func TestNewFoodPastAOneWayJunction(t *testing.T) {
 			body = line(from, testSegmentLength-1, testSegmentLength-1)
 		}
 		g.Eel = &Eel{Body: body, Game: g, Segment: from, TravelDir: c.dir}
-		for i := 0; i < 5000; i++ {
+		for range 5000 {
 			if on := NewFood(g).Body[0].Segment; on == next || on == from {
 				t.Fatalf("head on %s, heading for the one-way junction to %s: new food on %s", c.from, c.next, on.Label)
 			}
@@ -676,7 +676,7 @@ func TestNewFoodLooksAtAllFourTurns(t *testing.T) {
 		{Lesser, []int{21, 31, 41, 46}},
 	} {
 		g.Eel = &Eel{Body: line(from, 10, 10), Game: g, Segment: from, TravelDir: c.dir}
-		for i := 0; i < 5000; i++ {
+		for range 5000 {
 			on := NewFood(g).Body[0].Segment.Offset / testSegmentLength
 			if on == 12 || slices.Contains(c.ahead, on) {
 				t.Fatalf("on segment 12, %s, which leads to segments %v: new food on segment %d", towards(c.dir), c.ahead, on)

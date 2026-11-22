@@ -326,7 +326,7 @@ func (e *Eel) drawTurnSignals(h *Hop) {
 	g := e.Game
 	if h != nil {
 		base := h.Point.Segment.Offset
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			var pos int
 			if h.Direction == Greater {
 				pos = base + i
@@ -348,7 +348,7 @@ func (e *Eel) drawTurnSignals(h *Hop) {
 	}
 	upBase := up.Point.Segment.Offset
 	downBase := down.Point.Segment.Offset
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		v := g.Brightness - (float64(i) * .1)
 		red := hsvToRGB(0, 1.0, v)
 

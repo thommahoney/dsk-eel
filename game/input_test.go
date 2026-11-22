@@ -96,7 +96,7 @@ func TestInputBeforeFirstGame(t *testing.T) {
 		t.Fatalf("a new game holds direction %v, want Neutral", got)
 	}
 	for _, dir := range allDirections {
-		for buttons := controller.ButtonStatus(0); buttons < 32; buttons++ {
+		for buttons := range controller.ButtonStatus(32) {
 			g.HandleControllerState(input(dir, buttons))
 			if got := g.controlDir.Load(); got != dir {
 				t.Fatalf("after input %v the held direction is %v", dir, got)
@@ -115,7 +115,7 @@ func TestWhiteButtonTogglesPause(t *testing.T) {
 
 	check := func(when string) {
 		t.Helper()
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			was := g.paused.Load()
 			press(g, controller.Btn_White)
 			if g.paused.Load() == was {
@@ -233,7 +233,7 @@ func TestHeldDirectionCarriesIntoNextGame(t *testing.T) {
 	g.HandleControllerState(input(controller.Dir_North, controller.Btn_None))
 
 	done := startGame(g)
-	for frames := 0; frames < framesPastFirstJunction; frames++ {
+	for frames := range framesPastFirstJunction {
 		if _, ok := sink.frame(2 * time.Second); !ok {
 			t.Fatalf("the game stopped after %d frames: the eel died at the first junction with north held", frames)
 		}
@@ -257,7 +257,7 @@ func TestDemoModeEndsOnFirstInput(t *testing.T) {
 	g.tick = fastTick
 	g.Config.DemoMode = true
 
-	for game := 0; game < 2; game++ {
+	for game := range 2 {
 		done := startGame(g)
 		sink.mustFrame()
 		if !g.demoMode.Load() {
@@ -292,7 +292,7 @@ func TestDemoModeSteersAtJunction(t *testing.T) {
 	// It picks north, south, east or west, and all four lead somewhere
 	// from every segment.
 	g.demoMode.Store(true)
-	for try := 0; try < 64; try++ {
+	for try := range 64 {
 		if err := atJunction(); err != nil {
 			t.Fatalf("demo mode, try %d: %v", try, err)
 		}
@@ -328,9 +328,7 @@ func TestInputRace(t *testing.T) {
 	var states atomic.Int64
 	stop := make(chan struct{})
 	var hammer sync.WaitGroup
-	hammer.Add(1)
-	go func() {
-		defer hammer.Done()
+	hammer.Go(func() {
 		rng := rand.New(rand.NewPCG(1, 2))
 		for {
 			select {
@@ -350,7 +348,7 @@ func TestInputRace(t *testing.T) {
 				states.Add(2)
 			}
 		}
-	}()
+	})
 
 	// Let input arrive before the first game exists.
 	for states.Load() < 100 {

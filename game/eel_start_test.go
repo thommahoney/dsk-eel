@@ -12,7 +12,7 @@ func TestNewEelStartsAtTheLowEndOfItsSegment(t *testing.T) {
 	g := &Game{Segments: InitSegments()}
 
 	seen := map[*Segment]bool{}
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		eel := NewEel(g)
 		seen[eel.Segment] = true
 
@@ -47,7 +47,7 @@ func TestNewGameNeverEndsBeforeTheFirstJunction(t *testing.T) {
 	g, _ := newTestGame(t)
 
 	for _, segment := range g.Segments {
-		for game := 0; game < 6; game++ {
+		for game := range 6 {
 			// NewEel picks its own segment; move the eel to this one.
 			g.Eel = NewEel(g)
 			g.Eel.Segment = segment

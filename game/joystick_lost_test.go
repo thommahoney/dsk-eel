@@ -19,7 +19,7 @@ const framesPastNextJunction = 60
 // junction with nobody steering.
 func wantSelfSteering(t *testing.T, sink *artnetSink, done <-chan struct{}) {
 	t.Helper()
-	for frames := 0; frames < framesPastNextJunction; frames++ {
+	for frames := range framesPastNextJunction {
 		if _, ok := sink.frame(2 * time.Second); !ok {
 			t.Fatalf("the game stopped after %d frames: the eel died at a junction", frames)
 		}

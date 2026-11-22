@@ -15,13 +15,13 @@ import (
 func TestDrawSendsArtDMX(t *testing.T) {
 	g, sink := newTestGame(t)
 
-	for round := 0; round < 2; round++ {
+	for round := range 2 {
 		for i := range g.frame {
 			g.frame[i] = Color{byte(i + round*3), byte(i>>8) | byte(0x80>>round), byte(i*31 + 7 + round)}
 		}
 		g.Draw()
 
-		for univ := 0; univ < testUniverses; univ++ {
+		for univ := range testUniverses {
 			got := sink.datagram(time.Second)
 			if got == nil {
 				t.Fatalf("frame %d: datagram %d of %d was not sent", round, univ, testUniverses)

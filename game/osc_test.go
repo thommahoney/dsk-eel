@@ -374,7 +374,7 @@ func TestOscSendWithNobodyListening(t *testing.T) {
 	conn.Close()
 
 	client := testOscClient(t, port)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if err := client.SendFloat("/lx/mixer/channel/1/fader", 1); err != nil {
 			t.Fatalf("send %d: %v", i+1, err)
 		}
@@ -396,19 +396,19 @@ func TestOscConcurrentSends(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < each; i++ {
+		for range each {
 			_ = client.SendFloat("/lx/mixer/channel/1/fader", 1)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < each; i++ {
+		for range each {
 			_ = client.SendInts("/live/clip/fire", 6, 3)
 		}
 	}()
 
 	counts := map[string]int{}
-	for i := 0; i < 2*each; i++ {
+	for i := range 2 * each {
 		got := nextDatagram(conn, 2*time.Second)
 		if got == nil {
 			t.Fatalf("only %d of %d datagrams arrived", i, 2*each)

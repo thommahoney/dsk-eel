@@ -1,6 +1,7 @@
 package game
 
 import (
+	"maps"
 	"sync"
 	"testing"
 
@@ -24,12 +25,10 @@ var (
 )
 
 // merge returns the union of the given pixel maps.
-func merge(maps ...map[int]Color) map[int]Color {
+func merge(layers ...map[int]Color) map[int]Color {
 	out := map[int]Color{}
-	for _, m := range maps {
-		for k, v := range m {
-			out[k] = v
-		}
+	for _, layer := range layers {
+		maps.Copy(out, layer)
 	}
 	return out
 }
