@@ -23,6 +23,8 @@ dev/run                  # interactive shell
 
 `dev/run` builds the image on first use and again whenever the Dockerfile changes. The checkout is mounted at `/src`, and the Go caches are kept in the `dsk-eel-dev-cache` volume. Set `GO_VERSION` to try a different toolchain, for example `GO_VERSION=1.23 dev/run check` to confirm the minimum version in `go.mod` still builds.
 
+Every pull request and every push to `main` runs `dev/run check` and `dev/run smoke` in GitHub Actions ([.github/workflows/checks.yml](./.github/workflows/checks.yml)), in the same image, on an arm64 runner. `main` is protected: a pull request can only be merged once that `check` job has passed.
+
 Things to know:
 
 - The checkout, and any git worktree of it, must be somewhere the container runtime shares with its VM. With Colima's defaults that is only `$HOME`, so not `/tmp`.

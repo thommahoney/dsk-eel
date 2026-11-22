@@ -1,0 +1,41 @@
+# Runs the same checks as `dev/run check` and `dev/run smoke` do on a
+# developer's machine, in the same container image, for every pull request
+# and for every push to main.
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a pull request replaces the run for the push before it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The job name is the name of the status check that branch protection on
+  # main requires. Renaming it means updating that rule as well.
+  check:
+    name: check
+    # arm64, like the machine at the dome and the dev container on an Apple
+    # silicon Mac.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # dev/run builds the image from dev/Dockerfile the first time it is
+      # used. Doing it in a step of its own keeps the build log apart from
+      # the results.
+      - name: Build the dev image
+        run: dev/run true
+
+      - name: dev/run check
+        run: dev/run check
+
+      - name: dev/run smoke
+        run: dev/run smoke
