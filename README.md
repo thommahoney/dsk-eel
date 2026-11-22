@@ -5,7 +5,7 @@ This is the classic game of snake but displayed on the inside of a geodesic dome
 ## Features
 
 - Support for a custom joystick device
-- Keyboard control for development without the joystick (`--keyboard`)
+- Keyboard control for development without the joystick (`--keyboard`), on Linux and macOS
 - Game Mode displays the Eel game
 - Proxy Mode allows for passthrough of ArtNet data from other sources
 
@@ -23,6 +23,8 @@ dsk-eel --version
 ```
 
 `--version` says which build is installed. A game that is running keeps running the old build until it is started again.
+
+A release also carries `dsk-eel-darwin-arm64`, for a Mac with Apple silicon, and its `.sha256` (check it with `shasum -a 256 -c`). It is not signed. Downloaded with `curl` as above it runs; downloaded with a browser, macOS refuses to open it until `xattr -d com.apple.quarantine dsk-eel-darwin-arm64` has been run on it.
 
 What the machine needs:
 
@@ -45,7 +47,7 @@ dev/run                  # interactive shell
 
 `dev/run` builds the image on first use and again whenever the Dockerfile changes. The checkout is mounted at `/src`, and the Go caches are kept in the `dsk-eel-dev-cache` volume. The image's Go version and the `go` line in `go.mod` name the same release; bump them together. Set `GO_VERSION` to try a newer one first, for example `GO_VERSION=1.28 dev/run check`.
 
-Every pull request and every push to `main` runs `dev/run check` and `dev/run smoke` in GitHub Actions ([.github/workflows/checks.yml](./.github/workflows/checks.yml)), in the same image, on an arm64 runner. `main` is protected: a pull request can only be merged once the `check` and `release build` jobs have passed.
+Every pull request and every push to `main` runs `dev/run check` and `dev/run smoke` in GitHub Actions ([.github/workflows/checks.yml](./.github/workflows/checks.yml)), in the same image, on an arm64 runner. The code is also built and tested on macOS, in the `check (macos)` job. `main` is protected: a pull request can only be merged once `check`, `check (macos)` and `release build` have passed.
 
 Merging a pull request also publishes a build: once the checks have passed on `main`, the same workflow builds the binary with `dev/run release` and puts it on the [releases page](https://github.com/thommahoney/dsk-eel/releases), named after the day and the commit, like `2026-11-22-a77b7e7`. Merges made within a few minutes of each other can end up in one build. A pull request builds the same binary without publishing it. See [Installing a release](#installing-a-release).
 
@@ -81,6 +83,20 @@ A terminal reports that a key was pressed but not that it was let go, so this is
 - With the stick centred the eel dies at its first junction, as with the joystick, so press an arrow soon after starting. With an arrow held it never dies there, so space is also how to end a game, and with `--demo` how to hand the eel back to the demo.
 - It needs a terminal on standard input, so it cannot be combined with `dev/run smoke` or run from a service. `dev/run` only passes a terminal on when its output is one too: do not pipe or redirect its standard output.
 - Ctrl-Z is switched off while the game runs. If the game crashes, the terminal can be left not showing what is typed; `stty sane` puts it right.
+
+### Developing on a Mac
+
+The game builds and runs on macOS without the container. It needs the Go release named on the `go` line of [go.mod](./go.mod); the installer at <https://go.dev/dl/> is the simplest way to get it.
+
+```bash
+go test ./...
+go run . --keyboard                      # Chromatik on this Mac
+go run . --keyboard --chromatik 10.0.0.5  # Chromatik somewhere else
+```
+
+- **The joystick** needs a C compiler, because the library that reads it is C code. With Apple's command line tools installed (`xcode-select --install`) it is built in. Without them, `CGO_ENABLED=0 go build` gives a build that plays from the keyboard only; `--version` says `keyboard only` for such a build. On macOS the joystick is not at `/dev/hidraw3`, and nobody has tried one there yet.
+- **Chromatik on the same Mac** already has the Art-Net port, so the game sends from another one and says so in a warning.
+- **Tests and the release for the dome** are still Linux: GitHub Actions runs `dev/run check` in the dev image for every pull request, and also builds and tests the code on macOS. `dev/run` itself still works on a Mac, with Docker.
 
 ### Native build
 

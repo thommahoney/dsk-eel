@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package controller
 
@@ -9,9 +9,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/thommahoney/dsk-eel/config"
+	"golang.org/x/sys/unix"
 )
 
 // The signals that end the program and that it can catch. Each of them puts
@@ -69,9 +69,10 @@ func NewKeyboard(config *config.Config, handleFunc func(ControllerState)) (*Keyb
 }
 
 // unbufferTerminal makes the terminal on fd deliver every key at once and
-// stop echoing what is typed, and takes ctrl-Z away: a stopped game would
-// come back to a terminal its shell has reset, and inside a container
-// nothing could wake it at all. Everything else stays as it was, so ctrl-C
+// stop echoing what is typed, and takes the suspend keys away (ctrl-Z, and
+// on macOS ctrl-Y as well): a stopped game would come back to a terminal
+// its shell has reset, and inside a container nothing could wake it at
+// all. Everything else stays as it was, so ctrl-C
 // still interrupts and log lines still end in a proper new line. Keys typed
 // before the switch are thrown away.
 //
@@ -79,17 +80,19 @@ func NewKeyboard(config *config.Config, handleFunc func(ControllerState)) (*Keyb
 // what has been typed and not read; calling it more than once is harmless.
 // It fails if fd is not a terminal.
 func unbufferTerminal(fd int) (restore func(), err error) {
-	var old syscall.Termios
-	if err := termiosIoctl(fd, syscall.TCGETS, &old); err != nil {
+	old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
+	if err != nil {
 		return nil, err
 	}
 
-	unbuffered := old
-	unbuffered.Lflag &^= syscall.ICANON | syscall.ECHO
-	unbuffered.Cc[syscall.VMIN] = 1
-	unbuffered.Cc[syscall.VTIME] = 0
-	unbuffered.Cc[syscall.VSUSP] = 0 // 0 turns a control character off
-	if err := termiosIoctl(fd, syscall.TCSETS, &unbuffered); err != nil {
+	unbuffered := *old
+	unbuffered.Lflag &^= unix.ICANON | unix.ECHO
+	unbuffered.Cc[unix.VMIN] = 1
+	unbuffered.Cc[unix.VTIME] = 0
+	for _, key := range suspendKeys {
+		unbuffered.Cc[key] = keyDisabled
+	}
+	if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &unbuffered); err != nil {
 		return nil, err
 	}
 	discardInput(fd)
@@ -97,22 +100,8 @@ func unbufferTerminal(fd int) (restore func(), err error) {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			_ = termiosIoctl(fd, syscall.TCSETS, &old)
+			_ = unix.IoctlSetTermios(fd, ioctlSetTermios, old)
 			discardInput(fd)
 		})
 	}, nil
-}
-
-// discardInput throws away what has been typed on the terminal and not yet
-// read.
-func discardInput(fd int) {
-	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.TCFLSH, syscall.TCIFLUSH)
-}
-
-func termiosIoctl(fd int, request uintptr, termios *syscall.Termios) error {
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), request, uintptr(unsafe.Pointer(termios)))
-	if errno != 0 {
-		return errno
-	}
-	return nil
 }

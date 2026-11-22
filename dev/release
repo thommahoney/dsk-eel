@@ -1,7 +1,10 @@
 #!/bin/sh
-# Builds the binary that a release carries. Runs inside the dev container:
+# Builds the binary that a release carries. Runs inside the dev container,
+# or directly on a machine that has Go, which is how the macOS binary is
+# made:
 #
 #   dev/run release [version]
+#   sh dev/release [version]
 #
 # The result is dist/dsk-eel-<system>-<architecture> with a .sha256 file next
 # to it. It is built with the Go release the image pins and the module
@@ -35,7 +38,12 @@ mkdir -p dist
 echo "==> go build $name ($version)" >&2
 go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/$name" .
 
-(cd dist && sha256sum "$name" >"$name.sha256")
+# macOS has shasum where Linux has sha256sum; they write the same line.
+if command -v sha256sum >/dev/null 2>&1; then
+	(cd dist && sha256sum "$name" >"$name.sha256")
+else
+	(cd dist && shasum -a 256 "$name" >"$name.sha256")
+fi
 
 echo "==> built dist/$name" >&2
 "dist/$name" --version >&2

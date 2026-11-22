@@ -1,11 +1,13 @@
 package game
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -231,6 +233,11 @@ func initChromatikOsc(t *testing.T, chromatik net.IP, oscHost string, oscPort in
 func listenOn(t *testing.T, ip net.IP) *net.UDPConn {
 	t.Helper()
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: ip})
+	// Linux answers on every address in 127.0.0.0/8. Other systems only
+	// have 127.0.0.1 unless somebody adds more.
+	if errors.Is(err, syscall.EADDRNOTAVAIL) && !ip.Equal(net.IPv4(127, 0, 0, 1)) {
+		t.Skipf("this machine has no address %v: %v", ip, err)
+	}
 	if err != nil {
 		t.Fatalf("listen on %v: %v", ip, err)
 	}

@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package controller
 
@@ -12,59 +12,29 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/thommahoney/dsk-eel/config"
+	"golang.org/x/sys/unix"
 )
 
-// openPty opens a new pseudo-terminal and returns its two ends: what is
-// written to the master is what somebody typed, and the slave is the
-// terminal a program reads.
-func openPty(t *testing.T) (master, slave *os.File) {
+func termiosOf(t *testing.T, f *os.File) unix.Termios {
 	t.Helper()
-	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	termios, err := unix.IoctlGetTermios(int(f.Fd()), ioctlGetTermios)
 	if err != nil {
-		t.Skipf("no pseudo-terminals here: %v", err)
-	}
-	t.Cleanup(func() { _ = master.Close() })
-
-	ioctl := func(request uintptr, arg unsafe.Pointer) {
-		t.Helper()
-		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), request, uintptr(arg)); errno != 0 {
-			t.Fatalf("ioctl %#x on the pseudo-terminal: %v", request, errno)
-		}
-	}
-	var unlock int32
-	ioctl(syscall.TIOCSPTLCK, unsafe.Pointer(&unlock))
-	var number uint32
-	ioctl(syscall.TIOCGPTN, unsafe.Pointer(&number))
-
-	slave, err = os.OpenFile(fmt.Sprintf("/dev/pts/%d", number), os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		t.Fatalf("opening the terminal end: %v", err)
-	}
-	t.Cleanup(func() { _ = slave.Close() })
-	return master, slave
-}
-
-func termiosOf(t *testing.T, f *os.File) syscall.Termios {
-	t.Helper()
-	var termios syscall.Termios
-	if err := termiosIoctl(int(f.Fd()), syscall.TCGETS, &termios); err != nil {
 		t.Fatalf("reading the terminal's settings: %v", err)
 	}
-	return termios
+	return *termios
 }
 
 // unread returns how many bytes have been typed on the terminal and not yet
 // read.
 func unread(t *testing.T, f *os.File) int {
 	t.Helper()
-	var n int32
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), syscall.TIOCINQ, uintptr(unsafe.Pointer(&n))); errno != 0 {
-		t.Fatalf("asking the terminal how much is unread: %v", errno)
+	n, err := unix.IoctlGetInt(int(f.Fd()), ioctlUnread)
+	if err != nil {
+		t.Fatalf("asking the terminal how much is unread: %v", err)
 	}
-	return int(n)
+	return n
 }
 
 // waitForUnread waits until something typed has reached the terminal: the
@@ -82,7 +52,8 @@ func waitForUnread(t *testing.T, f *os.File) {
 
 // TestUnbufferTerminal checks the terminal setup on a real pseudo-terminal.
 // Only what is meant to change may change: line buffering and echo go off,
-// a read waits for one key, and ctrl-Z is switched off. Ctrl-C and output
+// a read waits for one key, and the suspend keys are switched off (which
+// ones, and how "off" is written, is in the file for each system). Ctrl-C and output
 // processing are left alone. What was typed before is thrown away, a key
 // typed afterwards is delivered without waiting for return, and restore
 // puts everything back.
@@ -92,12 +63,17 @@ func TestUnbufferTerminal(t *testing.T) {
 	// Start from settings that would make reads return at once with
 	// nothing, so that the test sees the ones unbufferTerminal sets.
 	before := termiosOf(t, slave)
-	before.Cc[syscall.VMIN], before.Cc[syscall.VTIME] = 0, 1
-	if err := termiosIoctl(int(slave.Fd()), syscall.TCSETS, &before); err != nil {
+	before.Cc[unix.VMIN], before.Cc[unix.VTIME] = 0, 1
+	if err := unix.IoctlSetTermios(int(slave.Fd()), ioctlSetTermios, &before); err != nil {
 		t.Fatal(err)
 	}
-	if before.Lflag&syscall.ICANON == 0 || before.Lflag&syscall.ECHO == 0 || before.Cc[syscall.VSUSP] == 0 {
-		t.Fatalf("a new terminal should buffer lines, echo and have a suspend key: %+v", before)
+	if before.Lflag&unix.ICANON == 0 || before.Lflag&unix.ECHO == 0 {
+		t.Fatalf("a new terminal should buffer lines and echo: %+v", before)
+	}
+	for key, off := range wantKeysOff {
+		if before.Cc[key] == off {
+			t.Fatalf("a new terminal should have its suspend keys: %+v", before)
+		}
 	}
 
 	// A line typed before the game starts.
@@ -112,12 +88,15 @@ func TestUnbufferTerminal(t *testing.T) {
 	}
 
 	want := before
-	want.Lflag &^= syscall.ICANON | syscall.ECHO
-	want.Cc[syscall.VMIN], want.Cc[syscall.VTIME], want.Cc[syscall.VSUSP] = 1, 0, 0
+	want.Lflag &^= unix.ICANON | unix.ECHO
+	want.Cc[unix.VMIN], want.Cc[unix.VTIME] = 1, 0
+	for key, off := range wantKeysOff {
+		want.Cc[key] = off
+	}
 	if during := termiosOf(t, slave); during != want {
 		t.Errorf("the terminal is set to\n%+v, want\n%+v", during, want)
 	}
-	if want.Lflag&syscall.ISIG == 0 || want.Oflag&syscall.OPOST == 0 {
+	if want.Lflag&unix.ISIG == 0 || want.Oflag&unix.OPOST == 0 {
 		t.Errorf("the test expects ctrl-C and output processing to stay on: %+v", want)
 	}
 	if n := unread(t, slave); n != 0 {
@@ -240,7 +219,7 @@ func TestNewKeyboardInAProcess(t *testing.T) {
 
 			cmd, stderr := startKeyboardHelper(t, slave, catchingInterrupt)
 			waitForLine(t, stderr, "keyboard:")
-			if during := termiosOf(t, slave); during.Lflag&(syscall.ICANON|syscall.ECHO) != 0 {
+			if during := termiosOf(t, slave); during.Lflag&(unix.ICANON|unix.ECHO) != 0 {
 				t.Fatalf("the program did not take the terminal over: flags %#x", during.Lflag)
 			}
 
@@ -261,7 +240,10 @@ func TestNewKeyboardInAProcess(t *testing.T) {
 					t.Errorf("the program ended with %s, want exit status %d", describe(status), c.wantExit)
 				}
 			}
-			if after := termiosOf(t, slave); after != before {
+			// Read through the master end: on macOS the terminal end
+			// is taken away from everybody when the program that had it
+			// as its controlling terminal exits.
+			if after := termiosOf(t, master); after != before {
 				t.Errorf("the terminal was left as\n%+v, want\n%+v", after, before)
 			}
 		})
@@ -273,7 +255,7 @@ func TestNewKeyboardInAProcess(t *testing.T) {
 // itself would then do nothing, so it has to exit by itself, with the
 // status a shell gives the signal, and still put the terminal back.
 func TestNewKeyboardWithSignalIgnored(t *testing.T) {
-	_, slave := openPty(t)
+	master, slave := openPty(t)
 	before := termiosOf(t, slave)
 
 	cmd, stderr := startKeyboardHelper(t, slave, ignoringInterrupt)
@@ -284,7 +266,7 @@ func TestNewKeyboardWithSignalIgnored(t *testing.T) {
 	if !status.Exited() || status.ExitStatus() != 128+int(syscall.SIGINT) {
 		t.Errorf("the program ended with %s, want exit status %d", describe(status), 128+int(syscall.SIGINT))
 	}
-	if after := termiosOf(t, slave); after != before {
+	if after := termiosOf(t, master); after != before {
 		t.Errorf("the terminal was left as\n%+v, want\n%+v", after, before)
 	}
 }
@@ -330,8 +312,7 @@ func startKeyboardHelper(t *testing.T, stdin *os.File, ignoreInterrupt bool) (*e
 	cmd.Env = append(os.Environ(), "DSK_EEL_KEYBOARD_HELPER=1")
 	cmd.Stdin = stdin
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	var probe syscall.Termios
-	if termiosIoctl(int(stdin.Fd()), syscall.TCGETS, &probe) == nil {
+	if _, err := unix.IoctlGetTermios(int(stdin.Fd()), ioctlGetTermios); err == nil {
 		cmd.SysProcAttr.Setctty = true // Ctty is 0: standard input
 	}
 	pipe, err := cmd.StderrPipe()
