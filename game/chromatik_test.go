@@ -1,10 +1,10 @@
 package game
 
 import (
-	"errors"
+	"bytes"
+	"log/slog"
 	"net"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -59,11 +59,59 @@ func expectSendToSelf(t *testing.T, chromatik *Chromatik) {
 }
 
 // skipIfPortBusy skips the test when the Art-Net port is already bound by
-// something else on this machine, which says nothing about the code.
-func skipIfPortBusy(t *testing.T, err error) {
+// something else on this machine, so that InitChromatik had to take
+// another port. That says nothing about what the test is checking.
+func skipIfPortBusy(t *testing.T, chromatik *Chromatik) {
 	t.Helper()
-	if errors.Is(err, syscall.EADDRINUSE) {
-		t.Skipf("port %d is in use: %v", testArtNetPort, err)
+	if chromatik == nil {
+		return
+	}
+	if port := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr).Port; port != testArtNetPort {
+		t.Skipf("port %d is in use on this machine; the socket got port %d", testArtNetPort, port)
+	}
+}
+
+// TestInitChromatikWhenThePortIsTaken is the game on the same machine as
+// Chromatik: something else already has the Art-Net port on every address.
+// The game must still start, send from a port of its own, say so, and its
+// frames must reach whoever has the port.
+func TestInitChromatikWhenThePortIsTaken(t *testing.T) {
+	holder, err := net.ListenUDP("udp", &net.UDPAddr{Port: testArtNetPort})
+	if err != nil {
+		t.Skipf("cannot take port %d to stand in for Chromatik: %v", testArtNetPort, err)
+	}
+	defer holder.Close()
+
+	var log bytes.Buffer
+	cfg := chromatikConfig("", net.IPv4(127, 0, 0, 1))
+	cfg.Logger = slog.New(slog.NewTextHandler(&log, nil))
+	chromatik, err := initChromatikForTest(t, cfg)
+	if err != nil {
+		t.Fatalf("InitChromatik with the Art-Net port taken: %v", err)
+	}
+
+	local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
+	if !local.IP.Equal(net.IPv4(127, 0, 0, 1)) || local.Port == testArtNetPort || local.Port == 0 {
+		t.Errorf("the socket is bound to %v, want 127.0.0.1 and a port other than %d", local, testArtNetPort)
+	}
+	if node := chromatik.ArtNetNode; !node.IP.Equal(net.IPv4(127, 0, 0, 1)) || node.Port != testArtNetPort {
+		t.Errorf("the destination is %v, want 127.0.0.1:%d", node, testArtNetPort)
+	}
+	if !strings.Contains(log.String(), "level=WARN") || !strings.Contains(log.String(), "in use") {
+		t.Errorf("no warning that the port is in use; the log is %q", log.String())
+	}
+
+	if _, err := chromatik.ArtNetSend([]byte("frame")); err != nil {
+		t.Fatalf("ArtNetSend: %v", err)
+	}
+	buf := make([]byte, 16)
+	_ = holder.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, from, err := holder.ReadFromUDP(buf)
+	if err != nil || string(buf[:n]) != "frame" {
+		t.Fatalf("the frame did not reach the holder of the port: got %q, err %v", buf[:n], err)
+	}
+	if from.Port != local.Port {
+		t.Errorf("the frame came from port %d, want the socket's port %d", from.Port, local.Port)
 	}
 }
 
@@ -114,7 +162,7 @@ func TestInitChromatikRejectsInvalidDestination(t *testing.T) {
 // and frames go to port 6454 of the destination.
 func TestInitChromatikLoopback(t *testing.T) {
 	chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", net.IPv4(127, 0, 0, 1)))
-	skipIfPortBusy(t, err)
+	skipIfPortBusy(t, chromatik)
 	if err != nil {
 		t.Fatalf("InitChromatik: %v", err)
 	}
@@ -137,7 +185,7 @@ func TestInitChromatikLoopback(t *testing.T) {
 func TestInitChromatikSendsToTheConfiguredDestination(t *testing.T) {
 	dest := net.IPv4(127, 0, 0, 2)
 	chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", dest))
-	skipIfPortBusy(t, err)
+	skipIfPortBusy(t, chromatik)
 	if err != nil {
 		t.Fatalf("InitChromatik: %v", err)
 	}
@@ -197,7 +245,7 @@ func TestInitChromatikAcceptsLoopbackListenWithLocalDestination(t *testing.T) {
 	}
 	for _, dest := range dests {
 		chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", dest))
-		skipIfPortBusy(t, err)
+		skipIfPortBusy(t, chromatik)
 		if err != nil {
 			t.Errorf("destination %v: InitChromatik: %v", dest, err)
 			continue
@@ -243,7 +291,7 @@ func TestInitChromatikRejectsMixedIPv4AndIPv6(t *testing.T) {
 				t.Skip("this machine has no ::1 address")
 			}
 			chromatik, err := initChromatikForTest(t, chromatikConfig(c.listenSubnet, c.dest))
-			skipIfPortBusy(t, err)
+			skipIfPortBusy(t, chromatik)
 			if err == nil {
 				_, sendErr := chromatik.ArtNetSend([]byte("frame"))
 				t.Fatalf("no error; the socket was bound to %v with destination %v, and sending gives: %v",
@@ -265,7 +313,7 @@ func TestInitChromatikRejectsMixedIPv4AndIPv6(t *testing.T) {
 // IPv4 destination and goes with an IPv4 subnet.
 func TestInitChromatikAcceptsIPv4MappedDestination(t *testing.T) {
 	chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", net.ParseIP("::ffff:127.0.0.1")))
-	skipIfPortBusy(t, err)
+	skipIfPortBusy(t, chromatik)
 	if err != nil {
 		t.Fatalf("InitChromatik: %v", err)
 	}
@@ -279,7 +327,7 @@ func TestInitChromatikIPv6Loopback(t *testing.T) {
 	}
 
 	chromatik, err := initChromatikForTest(t, chromatikConfig("::1/128", net.IPv6loopback))
-	skipIfPortBusy(t, err)
+	skipIfPortBusy(t, chromatik)
 	if err != nil {
 		t.Fatalf("InitChromatik: %v", err)
 	}
@@ -308,7 +356,7 @@ func TestInitChromatikWithoutListenSubnet(t *testing.T) {
 	}
 	for i, dest := range dests {
 		chromatik, err := initChromatikForTest(t, chromatikConfig("", dest))
-		skipIfPortBusy(t, err)
+		skipIfPortBusy(t, chromatik)
 		if err != nil {
 			t.Fatalf("destination %v: InitChromatik: %v", dest, err)
 		}
@@ -338,7 +386,7 @@ func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 	}
 
 	chromatik, err := initChromatikForTest(t, chromatikConfig("", dest))
-	skipIfPortBusy(t, err)
+	skipIfPortBusy(t, chromatik)
 	if err != nil {
 		t.Fatalf("InitChromatik: %v", err)
 	}
@@ -371,7 +419,7 @@ func TestInitChromatikWithoutListenSubnetOwnAddress(t *testing.T) {
 			want = net.IPv6loopback
 		}
 		chromatik, err := initChromatikForTest(t, chromatikConfig("", ipnet.IP))
-		skipIfPortBusy(t, err)
+		skipIfPortBusy(t, chromatik)
 		if err != nil {
 			t.Fatalf("destination %v: InitChromatik: %v", ipnet.IP, err)
 		}

@@ -1,10 +1,12 @@
 package game
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
@@ -78,7 +80,23 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 	node := &net.UDPAddr{IP: c.ArtNetDest, Port: artnetPort}
 	localAddr := &net.UDPAddr{IP: ip, Port: artnetPort}
 
+	// Art-Net is sent from the Art-Net port, as a node does. On the
+	// machine Chromatik itself runs on, Chromatik has that port, and
+	// asking for it fails. Chromatik takes frames from any port, so the
+	// system picks another one there.
 	conn, err := net.ListenUDP("udp", localAddr)
+	if addressInUse(err) {
+		inUse := localAddr.String()
+		localAddr = &net.UDPAddr{IP: ip}
+		conn, err = net.ListenUDP("udp", localAddr)
+		if err == nil {
+			localAddr = conn.LocalAddr().(*net.UDPAddr)
+			if c.Logger != nil {
+				c.Logger.Warn("the Art-Net port is in use on this machine, by Chromatik if it runs here; sending from another port",
+					"in use", inUse, "from", localAddr.String())
+			}
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error opening udp: %w", err)
 	}
@@ -100,6 +118,12 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 	}
 
 	return &Chromatik{ArtNetConnection: conn, ArtNetNode: node, OscClient: oscClient}, nil
+}
+
+// addressInUse reports whether a socket could not be opened because another
+// one already has its address and port.
+func addressInUse(err error) bool {
+	return errors.Is(err, syscall.EADDRINUSE)
 }
 
 // localAddrFor returns the local address this machine sends from to reach
