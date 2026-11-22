@@ -6,11 +6,12 @@
 # the image when this file changes, mounts the checkout at /src and keeps the
 # Go caches in a named volume.
 
-# go.mod's `go` line stays the minimum supported version; this is only the
-# toolchain used for development. It is pinned to a patch release so that
-# benchmark numbers do not move when the image is rebuilt; bump it on purpose.
-# Override with GO_VERSION=1.23 dev/run ... to check that the minimum still
-# builds.
+# The toolchain for development and for CI. go.mod's `go` line names the
+# same release, so everybody builds with at least this one: bump the two
+# together. It is pinned to a patch release so that benchmark numbers do not
+# move when the image is rebuilt. Override with GO_VERSION=<version> dev/run
+# ... to try a newer release before bumping; an older one than go.mod names
+# will refuse to build.
 ARG GO_VERSION=1.27.4
 FROM golang:${GO_VERSION}-bookworm
 
@@ -21,9 +22,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libudev-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned so a rebuild does not silently change lint results. These need a
-# recent Go to build, so let the go command fetch one if GO_VERSION is older;
-# the downloaded toolchain is dropped again with the module cache.
+# Pinned so a rebuild does not silently change lint results. If one of them
+# needs a newer Go than GO_VERSION, the go command may fetch it for this
+# step; the downloaded toolchain is dropped again with the module cache.
 ARG STATICCHECK_VERSION=2026.2.2
 ARG BENCHSTAT_VERSION=v0.0.0-20261117185222-4febdb082b2c
 RUN export GOBIN=/usr/local/bin GOTOOLCHAIN=auto \
