@@ -1,10 +1,16 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
+
+	"github.com/spf13/pflag"
 )
 
+// Config is what the command line asked for. Parse fills it: every field
+// but Logger has a flag there, so a new field needs a new flag.
 type Config struct {
 	AbletonDest    string // host:port of Ableton's OSC server; empty disables Ableton
 	ArtNetDest     net.IP
@@ -18,4 +24,48 @@ type Config struct {
 	OscPort        int
 	PrintVersion   bool // print the version and exit
 	Verbosity      int
+}
+
+// Parse registers the command line flags on the given flag set, parses args
+// with it and returns the resulting configuration. A flag set can be given
+// to it once.
+//
+// Every field of Config except Logger has a flag here, and each flag sets
+// one field. Logger is made by the caller from Verbosity.
+//
+// If the arguments are wrong, the error says how and the Config is not to
+// be used. A flag the library does not know, or a value it cannot read, is
+// reported by the library: the program passes pflag.CommandLine, which
+// prints the usage and the error and exits by itself, where the flag set a
+// test passes returns the error. What only this program knows to be wrong
+// is returned as an error to both.
+func Parse(flags *pflag.FlagSet, args []string) (Config, error) {
+	cfg := Config{}
+
+	flags.BoolVar(&cfg.DemoMode, "demo", false, "Randomly move eel")
+	flags.BoolVar(&cfg.NoJoy, "nojoy", false, "Run without a joystick connected")
+	flags.BoolVar(&cfg.Keyboard, "keyboard", false, "Steer with the keyboard of this terminal instead of the joystick: arrow keys (the direction stays held), space to centre the stick, r g b y w for the buttons, q to quit")
+	flags.CountVarP(&cfg.Verbosity, "verbose", "v", "Log more: -v adds what the game is doing, -vv adds everything")
+	flags.BoolVar(&cfg.PrintVersion, "version", false, "Print which build this is and exit")
+	flags.IPVar(&cfg.ArtNetDest, "chromatik", net.IPv4(127, 0, 0, 1), "IP address of Chromatik")
+	flags.StringVar(&cfg.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
+	flags.StringVar(&cfg.ListenSubnet, "listen", "", "Subnet of the local address to send Art-Net from, e.g. 10.0.0.0/24. Empty picks the address that reaches --chromatik; give it on a machine with more than one network")
+	flags.StringVar(&cfg.OscDest, "osc-dest", "", "Host of Chromatik's OSC server. Empty, the default, uses the --chromatik address")
+	flags.IntVar(&cfg.OscPort, "osc-port", 3030, "Port of OSC server")
+	flags.StringVar(&cfg.AbletonDest, "ableton", "", "host:port of Ableton Live's OSC server (AbletonOSC), e.g. 192.168.1.104:11000. Empty, the default, sends nothing to Ableton")
+
+	if err := flags.Parse(args); err != nil {
+		return cfg, err
+	}
+
+	// Anything that is not a flag or a flag's value used to be ignored
+	// without a word. That hid mistakes: in "--demo false" the word false
+	// is such a leftover, and the demo was on.
+	if flags.NArg() > 0 {
+		return cfg, fmt.Errorf("unexpected argument %q: every argument has to be a flag, like --demo, or the value of one; an on/off flag is turned off as in --demo=false", flags.Arg(0))
+	}
+	if flags.Changed("joystick") && cfg.ControllerPath == "" {
+		return cfg, errors.New("--joystick needs the path of the joystick's device; to run without the joystick use --keyboard, or --nojoy --demo")
+	}
+	return cfg, nil
 }
