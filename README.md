@@ -95,7 +95,7 @@ go run . --keyboard --chromatik 10.0.0.5  # Chromatik somewhere else
 ```
 
 - **The joystick** needs a C compiler, because the library that reads it is C code. With Apple's command line tools installed (`xcode-select --install`) it is built in. Without them, `CGO_ENABLED=0 go build` gives a build that plays from the keyboard only; `--version` says `keyboard only` for such a build. On macOS the joystick is not at `/dev/hidraw3`, and nobody has tried one there yet.
-- **Chromatik on the same Mac** already has the Art-Net port, so the game sends from another one and says so in a warning.
+- **Chromatik on the same Mac** has the Art-Net port to listen on, so the game leaves it alone and sends from another one, whichever of the two is started first.
 - **Tests and the release for the dome** are still Linux: GitHub Actions runs `dev/run check` in the dev image for every pull request, and also builds and tests the code on macOS. `dev/run` itself still works on a Mac, with Docker.
 
 ### Native build

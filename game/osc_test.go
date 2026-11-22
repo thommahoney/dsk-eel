@@ -1,10 +1,13 @@
 package game
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -205,20 +208,13 @@ func TestInitChromatikSendsOscToConfiguredDestination(t *testing.T) {
 	expectOSC(t, conn, []byte("/lx/mixer/channel/9/fader\x00\x00\x00,f\x00\x00\x3f\x80\x00\x00"))
 }
 
-// An OSC destination that cannot be used stops InitChromatik with an error
-// that names the flags, and the Art-Net socket it had already opened is
-// closed again.
 // initChromatikOsc calls InitChromatik with the given Chromatik address and
 // OSC host and port, leaving --listen to be worked out, and closes both
-// sockets when the test ends. It skips the test if the Art-Net port is
-// taken on this machine.
+// sockets when the test ends.
 func initChromatikOsc(t *testing.T, chromatik net.IP, oscHost string, oscPort int) *Chromatik {
 	t.Helper()
 	c, err := InitChromatik(&config.Config{ArtNetDest: chromatik, OscDest: oscHost, OscPort: oscPort})
 	if err != nil {
-		if strings.Contains(err.Error(), "address already in use") {
-			t.Skipf("the Art-Net port is in use on this machine: %v", err)
-		}
 		t.Fatalf("InitChromatik: %v", err)
 	}
 	t.Cleanup(func() {
@@ -272,20 +268,22 @@ func TestInitChromatikOscDestOverridesChromatikAddress(t *testing.T) {
 	expectOSC(t, conn, []byte("/lx/mixer/channel/9/fader\x00\x00\x00,f\x00\x00\x3f\x80\x00\x00"))
 }
 
+// An OSC destination that cannot be used stops InitChromatik with an error
+// that names the flags, and the Art-Net socket it had already opened is
+// closed again.
 func TestInitChromatikRejectsBadOscDestination(t *testing.T) {
+	var log bytes.Buffer
 	c, err := InitChromatik(&config.Config{
 		ArtNetDest:   net.IPv4(127, 0, 0, 1),
 		ListenSubnet: "127.0.0.1/8",
 		OscDest:      "127.0.0.1",
 		OscPort:      0,
+		Logger:       slog.New(slog.NewTextHandler(&log, nil)),
 	})
 	if err == nil {
 		c.ArtNetConnection.Close()
 		c.OscClient.Close()
 		t.Fatal("InitChromatik accepted OSC port 0")
-	}
-	if strings.Contains(err.Error(), "address already in use") {
-		t.Skipf("the Art-Net port is in use on this machine: %v", err)
 	}
 	for _, want := range []string{"--osc-dest", "--osc-port", `"127.0.0.1:0"`} {
 		if !strings.Contains(err.Error(), want) {
@@ -293,10 +291,19 @@ func TestInitChromatikRejectsBadOscDestination(t *testing.T) {
 		}
 	}
 
-	// The Art-Net port can be bound only if InitChromatik let go of it.
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 6454})
+	// The log names the address the Art-Net socket had. It can be bound
+	// again only if InitChromatik let go of it.
+	opened := regexp.MustCompile(`from=(\S+)`).FindStringSubmatch(log.String())
+	if opened == nil {
+		t.Fatalf("the log does not show the Art-Net socket's address; the log is %q", log.String())
+	}
+	addr, err := net.ResolveUDPAddr("udp", opened[1])
 	if err != nil {
-		t.Fatalf("the Art-Net port is still bound after the failed start: %v", err)
+		t.Fatalf("the logged Art-Net address %q: %v", opened[1], err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatalf("the Art-Net socket is still bound after the failed start: %v", err)
 	}
 	conn.Close()
 }
