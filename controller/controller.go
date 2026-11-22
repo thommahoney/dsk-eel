@@ -196,7 +196,7 @@ func NewController(config *config.Config, handleFunc func(ControllerState), lost
 	open := func() (Device, error) { return OpenHID(path) }
 	c, err := Start(config.Logger, open, DefaultRetryInterval, handleFunc, lostFunc)
 	if err != nil {
-		return nil, fmt.Errorf("cannot open the joystick at %q (set with --joystick; --nojoy --demo runs without a joystick): %w", path, err)
+		return nil, fmt.Errorf("cannot open the joystick at %q (set with --joystick; --keyboard steers with the keyboard, --nojoy --demo runs with no input at all): %w", path, err)
 	}
 	return c, nil
 }

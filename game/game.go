@@ -26,6 +26,7 @@ type Game struct {
 	Chromatik  *Chromatik
 	Config     *config.Config
 	Controller *controller.Controller
+	Keyboard   *controller.Keyboard
 	Eel        *Eel
 	Food       *Food
 	Segments   [SegmentCount]*Segment
@@ -91,16 +92,42 @@ func NewGame(config *config.Config) (*Game, error) {
 		return nil, fmt.Errorf("failed to initialize: %s", err)
 	}
 
-	if !game.Config.NoJoy {
-		c, err := controller.NewController(config, game.HandleControllerState, game.HandleControllerLost)
-		if err != nil {
-			return nil, fmt.Errorf("error in NewController: %s", err)
-		}
-
-		game.Controller = c
+	if err := game.openInput(); err != nil {
+		return nil, err
 	}
 
 	return game, nil
+}
+
+// How the keyboard and the joystick are opened. Tests put their own
+// functions here.
+var (
+	newKeyboard   = controller.NewKeyboard
+	newController = controller.NewController
+)
+
+// openInput opens what the game is steered with: the keyboard with
+// --keyboard, nothing with --nojoy, and the joystick otherwise. The
+// keyboard takes the joystick's place, so with --keyboard the joystick is
+// not opened, whether or not --nojoy is given as well.
+func (g *Game) openInput() error {
+	switch {
+	case g.Config.Keyboard:
+		k, err := newKeyboard(g.Config, g.HandleControllerState)
+		if err != nil {
+			return fmt.Errorf("error in NewKeyboard: %s", err)
+		}
+
+		g.Keyboard = k
+	case !g.Config.NoJoy:
+		c, err := newController(g.Config, g.HandleControllerState, g.HandleControllerLost)
+		if err != nil {
+			return fmt.Errorf("error in NewController: %s", err)
+		}
+
+		g.Controller = c
+	}
+	return nil
 }
 
 func (g *Game) RandomSegment() *Segment {
