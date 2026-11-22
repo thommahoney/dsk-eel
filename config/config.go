@@ -16,5 +16,6 @@ type Config struct {
 	NoJoy          bool
 	OscDest        string
 	OscPort        int
+	PrintVersion   bool // print the version and exit
 	Verbosity      int
 }
