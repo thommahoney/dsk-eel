@@ -1,12 +1,10 @@
 package game
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/controller"
@@ -35,19 +33,6 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 		ip, err = localAddrFor(c.ArtNetDest)
 		if err != nil {
 			return nil, err
-		}
-		// A destination that is one of this machine's own addresses is
-		// its own way to itself. Binding it would take the address and
-		// port a Chromatik on this machine is listening on, so frames are
-		// sent from loopback, which reaches every local address. The one
-		// exception is a loopback destination, where the address is bound
-		// as it always has been.
-		if ip.Equal(c.ArtNetDest) && !ip.IsLoopback() {
-			if ip.To4() != nil {
-				ip = net.IPv4(127, 0, 0, 1)
-			} else {
-				ip = net.IPv6loopback
-			}
 		}
 	} else {
 		addrs, err := net.InterfaceAddrs()
@@ -78,30 +63,19 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 	}
 
 	node := &net.UDPAddr{IP: c.ArtNetDest, Port: artnetPort}
-	localAddr := &net.UDPAddr{IP: ip, Port: artnetPort}
 
-	// Art-Net is sent from the Art-Net port, as a node does. On the
-	// machine Chromatik itself runs on, Chromatik has that port, and
-	// asking for it fails. Chromatik takes frames from any port, so the
-	// system picks another one there.
-	conn, err := net.ListenUDP("udp", localAddr)
-	if addressInUse(err) {
-		inUse := localAddr.String()
-		localAddr = &net.UDPAddr{IP: ip}
-		conn, err = net.ListenUDP("udp", localAddr)
-		if err == nil {
-			localAddr = conn.LocalAddr().(*net.UDPAddr)
-			if c.Logger != nil {
-				c.Logger.Warn("the Art-Net port is in use on this machine, by Chromatik if it runs here; sending from another port",
-					"in use", inUse, "from", localAddr.String())
-			}
-		}
-	}
+	// Frames go to the Art-Net port and come from a port the system
+	// picks. The Art-Net port belongs to whoever listens for Art-Net, and
+	// on Chromatik's own machine that is Chromatik: a game that took it
+	// first kept Chromatik from starting its Art-Net input, and on Windows
+	// a game that took it second got its own frames back. Chromatik does
+	// not look at the port a frame comes from.
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: ip})
 	if err != nil {
 		return nil, fmt.Errorf("error opening udp: %w", err)
 	}
 	if c.Logger != nil {
-		c.Logger.Info("Art-Net socket open", "from", localAddr.String(), "to", node.String())
+		c.Logger.Info("Art-Net socket open", "from", conn.LocalAddr().String(), "to", node.String())
 	}
 
 	// Chromatik takes OSC on the machine it takes Art-Net on, unless
@@ -118,12 +92,6 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 	}
 
 	return &Chromatik{ArtNetConnection: conn, ArtNetNode: node, OscClient: oscClient}, nil
-}
-
-// addressInUse reports whether a socket could not be opened because another
-// one already has its address and port.
-func addressInUse(err error) bool {
-	return errors.Is(err, syscall.EADDRINUSE)
 }
 
 // localAddrFor returns the local address this machine sends from to reach

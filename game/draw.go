@@ -1,7 +1,8 @@
 package game
 
 const (
-	// artnetPort is the UDP port Art-Net uses, for sending and receiving.
+	// artnetPort is the UDP port Art-Net is sent to. The game sends from a
+	// port of its own: see InitChromatik.
 	artnetPort = 0x1936 // 6454
 
 	// universeCount is the number of Art-Net DMX universes sent per frame.

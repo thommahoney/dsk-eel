@@ -2,6 +2,7 @@ package game
 
 import (
 	"bytes"
+	"fmt"
 	"log/slog"
 	"net"
 	"strings"
@@ -28,8 +29,7 @@ func chromatikConfig(listenSubnet string, dest net.IP) *config.Config {
 
 // initChromatikForTest calls InitChromatik and makes sure its sockets are
 // closed again when the test ends, whether or not the test expected any:
-// the Art-Net socket, which is bound to the fixed port 6454, and the OSC
-// client's socket.
+// the Art-Net socket and the OSC client's socket.
 func initChromatikForTest(t *testing.T, c *config.Config) (*Chromatik, error) {
 	t.Helper()
 	chromatik, err := InitChromatik(c)
@@ -42,77 +42,155 @@ func initChromatikForTest(t *testing.T, c *config.Config) (*Chromatik, error) {
 	return chromatik, err
 }
 
-// expectSendToSelf sends a datagram with ArtNetSend and reads it back from
-// the same socket. That works when the socket is bound to the address and
-// port that frames are sent to, as in the loopback tests below.
-func expectSendToSelf(t *testing.T, chromatik *Chromatik) {
-	t.Helper()
-	if _, err := chromatik.ArtNetSend([]byte("frame")); err != nil {
-		t.Fatalf("ArtNetSend: %v", err)
+// listenAsChromatik binds the Art-Net port on every address of dest's kind,
+// IPv4 or IPv6, as a Chromatik on this machine does.
+func listenAsChromatik(dest net.IP) (*net.UDPConn, error) {
+	network := "udp4"
+	if dest.To4() == nil {
+		network = "udp6"
 	}
-	buf := make([]byte, 16)
-	_ = chromatik.ArtNetConnection.SetReadDeadline(time.Now().Add(2 * time.Second))
-	n, _, err := chromatik.ArtNetConnection.ReadFromUDP(buf)
-	if err != nil || string(buf[:n]) != "frame" {
-		t.Errorf("the datagram did not arrive: got %q, err %v", buf[:n], err)
+	return net.ListenUDP(network, &net.UDPAddr{Port: testArtNetPort})
+}
+
+// ownAddresses returns this machine's addresses that a frame sent on this
+// machine is sure to reach: those of interfaces that are up, other than
+// loopback, link-local ones and the two ends of a tunnel. A VPN's tunnel
+// has an address of this machine too, but a frame sent to it from here
+// does not arrive on every system.
+func ownAddresses(t *testing.T) []net.IP {
+	t.Helper()
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatalf("Interfaces: %v", err)
+	}
+	var own []net.IP
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&(net.FlagLoopback|net.FlagPointToPoint) != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			t.Fatalf("addresses of %s: %v", iface.Name, err)
+		}
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && !ipnet.IP.IsLinkLocalUnicast() {
+				own = append(own, ipnet.IP)
+			}
+		}
+	}
+	return own
+}
+
+// hasAddress reports whether this machine answers on ip, found out by
+// binding a socket to it. Linux answers on every address in 127.0.0.0/8.
+// Other systems only have 127.0.0.1 unless somebody adds more.
+func hasAddress(ip net.IP) bool {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: ip})
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// expectSameMachine pins what InitChromatik does when the destination is on
+// this machine, where the Art-Net port is Chromatik's to listen on and the
+// game must keep off it, as it does everywhere: the socket is bound
+// to wantLocal (any address, if that is nil: for the unspecified address
+// systems differ) and a port the system picked, never the Art-Net port, frames
+// are addressed to the Art-Net port of dest, and none of it is worth a
+// warning. A frame sent with ArtNetSend must then arrive at a stand-in for
+// Chromatik, a socket that has the Art-Net port on every address.
+//
+// Both start orders are tried. With Chromatik first, the stand-in has the
+// port before InitChromatik runs. With the game first, the stand-in asks for
+// the port afterwards and must still get it.
+//
+// If something else on this machine really has the port, the test is
+// skipped: no stand-in can be put there.
+func expectSameMachine(t *testing.T, listenSubnet string, dest, wantLocal net.IP) {
+	t.Helper()
+	for _, gameFirst := range []bool{false, true} {
+		order := "Chromatik first"
+		if gameFirst {
+			order = "the game first"
+		}
+		listen := "no --listen"
+		if listenSubnet != "" {
+			listen = "--listen " + listenSubnet
+		}
+		t.Run(fmt.Sprintf("%s, to %v, %s", listen, dest, order), func(t *testing.T) {
+			standIn, err := listenAsChromatik(dest)
+			if err != nil {
+				t.Skipf("cannot take port %d to stand in for Chromatik: %v", testArtNetPort, err)
+			}
+			if gameFirst {
+				// The port is free. Whether it still is once the game
+				// has started is checked below.
+				standIn.Close()
+			} else {
+				t.Cleanup(func() { standIn.Close() })
+			}
+
+			var log bytes.Buffer
+			cfg := chromatikConfig(listenSubnet, dest)
+			cfg.Logger = slog.New(slog.NewTextHandler(&log, nil))
+			chromatik, err := initChromatikForTest(t, cfg)
+			if err != nil {
+				t.Fatalf("InitChromatik: %v", err)
+			}
+
+			local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
+			if (wantLocal != nil && !local.IP.Equal(wantLocal)) || local.Port == 0 || local.Port == testArtNetPort {
+				t.Errorf("the socket is bound to %v, want %v and a port of its own, not %d", local, wantLocal, testArtNetPort)
+			}
+			if node := chromatik.ArtNetNode; !node.IP.Equal(dest) || node.Port != testArtNetPort {
+				t.Errorf("frames are addressed to %v, want %v port %d", node, dest, testArtNetPort)
+			}
+			if strings.Contains(log.String(), "level=WARN") {
+				t.Errorf("a warning was logged for the normal case; the log is %q", log.String())
+			}
+			if !strings.Contains(log.String(), "from="+local.String()) {
+				t.Errorf("the log does not show the socket's address %v; the log is %q", local, log.String())
+			}
+
+			if gameFirst {
+				standIn, err = listenAsChromatik(dest)
+				if err != nil {
+					t.Fatalf("with the game running, Chromatik cannot take port %d: %v", testArtNetPort, err)
+				}
+				t.Cleanup(func() { standIn.Close() })
+			}
+
+			// What a send to the unspecified address does differs between
+			// systems, and a send to an address this machine does not
+			// have arrives nowhere. For those only the addresses are
+			// checked.
+			if dest.IsUnspecified() || !hasAddress(dest) {
+				return
+			}
+			if _, err := chromatik.ArtNetSend([]byte("frame")); err != nil {
+				t.Fatalf("ArtNetSend: %v", err)
+			}
+			buf := make([]byte, 16)
+			_ = standIn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			n, from, err := standIn.ReadFromUDP(buf)
+			if err != nil || string(buf[:n]) != "frame" {
+				t.Fatalf("the frame did not reach the holder of the Art-Net port: got %q, err %v", buf[:n], err)
+			}
+			if from.Port != local.Port {
+				t.Errorf("the frame came from port %d, want the socket's port %d", from.Port, local.Port)
+			}
+		})
 	}
 }
 
-// skipIfPortBusy skips the test when the Art-Net port is already bound by
-// something else on this machine, so that InitChromatik had to take
-// another port. That says nothing about what the test is checking.
-func skipIfPortBusy(t *testing.T, chromatik *Chromatik) {
-	t.Helper()
-	if chromatik == nil {
-		return
-	}
-	if port := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr).Port; port != testArtNetPort {
-		t.Skipf("port %d is in use on this machine; the socket got port %d", testArtNetPort, port)
-	}
-}
-
-// TestInitChromatikWhenThePortIsTaken is the game on the same machine as
-// Chromatik: something else already has the Art-Net port on every address.
-// The game must still start, send from a port of its own, say so, and its
-// frames must reach whoever has the port.
-func TestInitChromatikWhenThePortIsTaken(t *testing.T) {
-	holder, err := net.ListenUDP("udp", &net.UDPAddr{Port: testArtNetPort})
-	if err != nil {
-		t.Skipf("cannot take port %d to stand in for Chromatik: %v", testArtNetPort, err)
-	}
-	defer holder.Close()
-
-	var log bytes.Buffer
-	cfg := chromatikConfig("", net.IPv4(127, 0, 0, 1))
-	cfg.Logger = slog.New(slog.NewTextHandler(&log, nil))
-	chromatik, err := initChromatikForTest(t, cfg)
-	if err != nil {
-		t.Fatalf("InitChromatik with the Art-Net port taken: %v", err)
-	}
-
-	local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
-	if !local.IP.Equal(net.IPv4(127, 0, 0, 1)) || local.Port == testArtNetPort || local.Port == 0 {
-		t.Errorf("the socket is bound to %v, want 127.0.0.1 and a port other than %d", local, testArtNetPort)
-	}
-	if node := chromatik.ArtNetNode; !node.IP.Equal(net.IPv4(127, 0, 0, 1)) || node.Port != testArtNetPort {
-		t.Errorf("the destination is %v, want 127.0.0.1:%d", node, testArtNetPort)
-	}
-	if !strings.Contains(log.String(), "level=WARN") || !strings.Contains(log.String(), "in use") {
-		t.Errorf("no warning that the port is in use; the log is %q", log.String())
-	}
-
-	if _, err := chromatik.ArtNetSend([]byte("frame")); err != nil {
-		t.Fatalf("ArtNetSend: %v", err)
-	}
-	buf := make([]byte, 16)
-	_ = holder.SetReadDeadline(time.Now().Add(2 * time.Second))
-	n, from, err := holder.ReadFromUDP(buf)
-	if err != nil || string(buf[:n]) != "frame" {
-		t.Fatalf("the frame did not reach the holder of the port: got %q, err %v", buf[:n], err)
-	}
-	if from.Port != local.Port {
-		t.Errorf("the frame came from port %d, want the socket's port %d", from.Port, local.Port)
-	}
+// The program's defaults are the game on the same machine as Chromatik:
+// no --listen and frames to 127.0.0.1. The game leaves the Art-Net port to
+// Chromatik whichever of the two starts first, sends from a port of its
+// own, and its frames reach whoever has the Art-Net port.
+func TestInitChromatikLeavesTheArtNetPortToChromatik(t *testing.T) {
+	expectSameMachine(t, "", net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 1))
 }
 
 func TestInitChromatikRejectsInvalidSubnet(t *testing.T) {
@@ -158,46 +236,18 @@ func TestInitChromatikRejectsInvalidDestination(t *testing.T) {
 	}
 }
 
-// With a subnet that holds 127.0.0.1 the socket is bound to 127.0.0.1:6454
-// and frames go to port 6454 of the destination.
+// With a subnet that holds 127.0.0.1 the socket is bound to 127.0.0.1, and
+// frames go to port 6454 of the destination from a port of the game's own.
 func TestInitChromatikLoopback(t *testing.T) {
-	chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", net.IPv4(127, 0, 0, 1)))
-	skipIfPortBusy(t, chromatik)
-	if err != nil {
-		t.Fatalf("InitChromatik: %v", err)
-	}
-
-	local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
-	if !local.IP.Equal(net.IPv4(127, 0, 0, 1)) || local.Port != testArtNetPort {
-		t.Errorf("socket is bound to %v, want 127.0.0.1:%d", local, testArtNetPort)
-	}
-	node := chromatik.ArtNetNode
-	if !node.IP.Equal(net.IPv4(127, 0, 0, 1)) || node.Port != testArtNetPort {
-		t.Errorf("destination is %v, want 127.0.0.1:%d", node, testArtNetPort)
-	}
-	expectSendToSelf(t, chromatik)
+	expectSameMachine(t, "127.0.0.1/24", net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 1))
 }
 
 // Frames go to the --chromatik address while the socket stays bound to the
 // local address in the subnet. The two are different loopback addresses
-// here, so the test can tell them apart on any machine. Nothing is sent;
-// only the addresses are checked.
+// here, so the test can tell them apart on any machine. The frame is only
+// sent where the system has 127.0.0.2.
 func TestInitChromatikSendsToTheConfiguredDestination(t *testing.T) {
-	dest := net.IPv4(127, 0, 0, 2)
-	chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", dest))
-	skipIfPortBusy(t, chromatik)
-	if err != nil {
-		t.Fatalf("InitChromatik: %v", err)
-	}
-
-	local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
-	if !local.IP.Equal(net.IPv4(127, 0, 0, 1)) || local.Port != testArtNetPort {
-		t.Errorf("socket is bound to %v, want 127.0.0.1:%d", local, testArtNetPort)
-	}
-	node := chromatik.ArtNetNode
-	if !node.IP.Equal(dest) || node.Port != testArtNetPort {
-		t.Errorf("destination is %v, want %v:%d", node, dest, testArtNetPort)
-	}
+	expectSameMachine(t, "127.0.0.1/24", net.IPv4(127, 0, 0, 2), net.IPv4(127, 0, 0, 1))
 }
 
 // A socket bound to loopback cannot send to another machine: every send
@@ -231,29 +281,17 @@ func TestInitChromatikRejectsLoopbackListenWithRemoteDestination(t *testing.T) {
 
 // A loopback --listen subnet is fine when Chromatik is on this machine,
 // whichever of the machine's addresses it is given by: loopback, the
-// unspecified address or one of the machine's other addresses.
+// unspecified address or one of the machine's other addresses. Each of
+// them leaves the Art-Net port to Chromatik.
 func TestInitChromatikAcceptsLoopbackListenWithLocalDestination(t *testing.T) {
 	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2), net.IPv4zero}
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		t.Fatalf("InterfaceAddrs: %v", err)
-	}
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil && !ipnet.IP.IsLoopback() {
-			dests = append(dests, ipnet.IP)
+	for _, own := range ownAddresses(t) {
+		if own.To4() != nil {
+			dests = append(dests, own)
 		}
 	}
 	for _, dest := range dests {
-		chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", dest))
-		skipIfPortBusy(t, chromatik)
-		if err != nil {
-			t.Errorf("destination %v: InitChromatik: %v", dest, err)
-			continue
-		}
-		if local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr); !local.IP.Equal(net.IPv4(127, 0, 0, 1)) {
-			t.Errorf("destination %v: socket is bound to %v, want 127.0.0.1", dest, local)
-		}
-		chromatik.ArtNetConnection.Close()
+		expectSameMachine(t, "127.0.0.1/24", dest, net.IPv4(127, 0, 0, 1))
 	}
 }
 
@@ -291,7 +329,6 @@ func TestInitChromatikRejectsMixedIPv4AndIPv6(t *testing.T) {
 				t.Skip("this machine has no ::1 address")
 			}
 			chromatik, err := initChromatikForTest(t, chromatikConfig(c.listenSubnet, c.dest))
-			skipIfPortBusy(t, chromatik)
 			if err == nil {
 				_, sendErr := chromatik.ArtNetSend([]byte("frame"))
 				t.Fatalf("no error; the socket was bound to %v with destination %v, and sending gives: %v",
@@ -312,12 +349,7 @@ func TestInitChromatikRejectsMixedIPv4AndIPv6(t *testing.T) {
 // An IPv4 destination written in its IPv6 form (::ffff:a.b.c.d) is still an
 // IPv4 destination and goes with an IPv4 subnet.
 func TestInitChromatikAcceptsIPv4MappedDestination(t *testing.T) {
-	chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", net.ParseIP("::ffff:127.0.0.1")))
-	skipIfPortBusy(t, chromatik)
-	if err != nil {
-		t.Fatalf("InitChromatik: %v", err)
-	}
-	expectSendToSelf(t, chromatik)
+	expectSameMachine(t, "127.0.0.1/24", net.ParseIP("::ffff:127.0.0.1"), net.IPv4(127, 0, 0, 1))
 }
 
 // The same over IPv6, on machines whose loopback interface has ::1.
@@ -325,109 +357,106 @@ func TestInitChromatikIPv6Loopback(t *testing.T) {
 	if !hasIPv6Loopback(t) {
 		t.Skip("this machine has no ::1 address")
 	}
-
-	chromatik, err := initChromatikForTest(t, chromatikConfig("::1/128", net.IPv6loopback))
-	skipIfPortBusy(t, chromatik)
-	if err != nil {
-		t.Fatalf("InitChromatik: %v", err)
-	}
-
-	local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
-	if !local.IP.Equal(net.IPv6loopback) || local.Port != testArtNetPort {
-		t.Errorf("socket is bound to %v, want [::1]:%d", local, testArtNetPort)
-	}
-	node := chromatik.ArtNetNode
-	if !node.IP.Equal(net.IPv6loopback) || node.Port != testArtNetPort {
-		t.Errorf("destination is %v, want [::1]:%d", node, testArtNetPort)
-	}
-	expectSendToSelf(t, chromatik)
+	expectSameMachine(t, "::1/128", net.IPv6loopback, net.IPv6loopback)
 }
 
 // Without --listen the socket is bound to the local address that reaches
-// the destination. For a destination on this machine that is the
-// destination's own address, so these are the program's defaults: bound to
-// 127.0.0.1:6454 and sending to 127.0.0.1:6454.
+// the destination. For a loopback destination that is the destination's
+// own address, however the destination is written, with a port of the
+// game's own.
 func TestInitChromatikWithoutListenSubnet(t *testing.T) {
-	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.ParseIP("::ffff:127.0.0.1")}
-	wants := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 1)}
+	expectSameMachine(t, "", net.ParseIP("::ffff:127.0.0.1"), net.IPv4(127, 0, 0, 1))
+	// The unspecified address is this machine as well. Which address the
+	// system sends from to reach it is its own business.
+	expectSameMachine(t, "", net.IPv4zero, nil)
 	if hasIPv6Loopback(t) {
-		dests = append(dests, net.IPv6loopback)
-		wants = append(wants, net.IPv6loopback)
-	}
-	for i, dest := range dests {
-		chromatik, err := initChromatikForTest(t, chromatikConfig("", dest))
-		skipIfPortBusy(t, chromatik)
-		if err != nil {
-			t.Fatalf("destination %v: InitChromatik: %v", dest, err)
-		}
-		local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
-		if !local.IP.Equal(wants[i]) || local.Port != testArtNetPort {
-			t.Errorf("destination %v: socket is bound to %v, want %v port %d", dest, local, wants[i], testArtNetPort)
-		}
-		if node := chromatik.ArtNetNode; !node.IP.Equal(dest) || node.Port != testArtNetPort {
-			t.Errorf("destination %v: frames are addressed to %v", dest, node)
-		}
-		expectSendToSelf(t, chromatik)
-		chromatik.ArtNetConnection.Close()
+		expectSameMachine(t, "", net.IPv6loopback, net.IPv6loopback)
 	}
 }
 
 // Without --listen and with Chromatik on another machine, the socket must
 // be bound to the address of the interface that reaches it. This is the
 // case the automatic choice exists for: a socket bound to 127.0.0.1 cannot
-// send to another machine at all. 192.0.2.1 is a documentation address
-// that no machine has; nothing is sent, the route is only looked up. On a
-// machine with no route to it, such as one with only loopback, the test is
-// skipped.
+// send to another machine at all. Here too the game sends from a port of
+// its own and leaves the Art-Net port alone: whether another program on
+// this machine has that port makes no difference, and is tried both ways.
+// 192.0.2.1 is a documentation address that no machine has; nothing is
+// sent, the route is only looked up. On a machine with no route to it,
+// such as one with only loopback, the test is skipped.
 func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 	dest := net.IPv4(192, 0, 2, 1)
-	if _, err := localAddrFor(dest); err != nil {
+	from, err := localAddrFor(dest)
+	if err != nil {
 		t.Skipf("this machine has no route to %v: %v", dest, err)
 	}
 
-	chromatik, err := initChromatikForTest(t, chromatikConfig("", dest))
-	skipIfPortBusy(t, chromatik)
-	if err != nil {
-		t.Fatalf("InitChromatik: %v", err)
-	}
-	local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
-	if local.Port != testArtNetPort || local.IP.IsLoopback() || !isOwnAddress(t, local.IP) {
-		t.Errorf("socket is bound to %v, want port %d of one of this machine's addresses other than loopback", local, testArtNetPort)
-	}
-	if node := chromatik.ArtNetNode; !node.IP.Equal(dest) || node.Port != testArtNetPort {
-		t.Errorf("frames are addressed to %v, want %v port %d", node, dest, testArtNetPort)
+	for _, portTaken := range []bool{false, true} {
+		name := "the Art-Net port free"
+		if portTaken {
+			name = "the Art-Net port taken"
+		}
+		t.Run(name, func(t *testing.T) {
+			if portTaken {
+				holder, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort})
+				if err != nil {
+					t.Skipf("cannot take port %d to stand in for another Art-Net program: %v", testArtNetPort, err)
+				}
+				defer holder.Close()
+			}
+
+			var log bytes.Buffer
+			cfg := chromatikConfig("", dest)
+			cfg.Logger = slog.New(slog.NewTextHandler(&log, nil))
+			chromatik, err := initChromatikForTest(t, cfg)
+			if err != nil {
+				t.Fatalf("InitChromatik: %v", err)
+			}
+
+			local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
+			if !local.IP.Equal(from) || local.IP.IsLoopback() || !isOwnAddress(t, local.IP) {
+				t.Errorf("the socket is bound to %v, want %v, one of this machine's addresses other than loopback", local, from)
+			}
+			if local.Port == 0 || local.Port == testArtNetPort {
+				t.Errorf("the socket is bound to port %d, want a port of its own, not %d", local.Port, testArtNetPort)
+			}
+			if node := chromatik.ArtNetNode; !node.IP.Equal(dest) || node.Port != testArtNetPort {
+				t.Errorf("frames are addressed to %v, want %v port %d", node, dest, testArtNetPort)
+			}
+			if strings.Contains(log.String(), "level=WARN") {
+				t.Errorf("a warning was logged; the log is %q", log.String())
+			}
+			if !strings.Contains(log.String(), "from="+local.String()) {
+				t.Errorf("the log does not show the socket's address %v; the log is %q", local, log.String())
+			}
+
+			// With the game running, another program can still take the
+			// Art-Net port on the address the game sends from.
+			if !portTaken {
+				later, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort})
+				if err != nil {
+					t.Errorf("with the game running, port %d cannot be taken: %v", testArtNetPort, err)
+				} else {
+					later.Close()
+				}
+			}
+		})
 	}
 }
 
 // A --chromatik address that is one of this machine's own, other than
 // loopback, means Chromatik runs here and listens on that address. The
-// game must not take that address and port for itself: it sends from
-// loopback, as it did when --listen defaulted to the loopback subnet. On a
-// machine with only loopback there is nothing to try.
-func TestInitChromatikWithoutListenSubnetOwnAddress(t *testing.T) {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		t.Fatalf("InterfaceAddrs: %v", err)
-	}
-	for _, addr := range addrs {
-		ipnet, ok := addr.(*net.IPNet)
-		if !ok || ipnet.IP.IsLoopback() || ipnet.IP.IsLinkLocalUnicast() {
-			continue
+// game sends from that same address, without --listen because it is the
+// address the system reaches itself from, and with a --listen subnet that
+// holds it. Either way the Art-Net port is left to Chromatik. On a machine
+// with only loopback there is nothing to try.
+func TestInitChromatikOwnAddress(t *testing.T) {
+	for _, own := range ownAddresses(t) {
+		subnet := own.String() + "/32"
+		if own.To4() == nil {
+			subnet = own.String() + "/128"
 		}
-		want := net.IPv4(127, 0, 0, 1)
-		if ipnet.IP.To4() == nil {
-			want = net.IPv6loopback
-		}
-		chromatik, err := initChromatikForTest(t, chromatikConfig("", ipnet.IP))
-		skipIfPortBusy(t, chromatik)
-		if err != nil {
-			t.Fatalf("destination %v: InitChromatik: %v", ipnet.IP, err)
-		}
-		local := chromatik.ArtNetConnection.LocalAddr().(*net.UDPAddr)
-		if !local.IP.Equal(want) || local.Port != testArtNetPort {
-			t.Errorf("destination %v: socket is bound to %v, want %v port %d", ipnet.IP, local, want, testArtNetPort)
-		}
-		chromatik.ArtNetConnection.Close()
+		expectSameMachine(t, "", own, own)
+		expectSameMachine(t, subnet, own, own)
 	}
 }
 
