@@ -1,0 +1,42 @@
+#!/bin/sh
+# Builds the binary that a release carries. Runs inside the dev container:
+#
+#   dev/run release [version]
+#
+# The result is dist/dsk-eel-<system>-<architecture> with a .sha256 file next
+# to it. It is built with the Go release the image pins and the module
+# versions go.sum pins, for the architecture of the machine it runs on:
+# arm64 in CI and on an Apple silicon Mac, which is what the Raspberry Pi at
+# the dome needs.
+#
+# version is what `dsk-eel --version` will say. CI passes the name of the
+# release; a build made by hand says "dev" unless told otherwise.
+set -eu
+
+if [ $# -gt 1 ]; then
+	echo "usage: dev/run release [version]" >&2
+	exit 2
+fi
+version=${1:-dev}
+# The version goes into a linker flag as it is.
+case $version in
+*[!A-Za-z0-9._-]*)
+	echo "dev/release: the version may only have letters, digits, dots, dashes and underscores: $version" >&2
+	exit 2
+	;;
+esac
+cd -- "$(dirname -- "$0")/.."
+
+name=dsk-eel-$(go env GOOS)-$(go env GOARCH)
+mkdir -p dist
+
+# -trimpath keeps this checkout's directory out of the binary, and -s -w
+# leave out the debugger's tables: the same source gives the same file.
+echo "==> go build $name ($version)" >&2
+go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/$name" .
+
+(cd dist && sha256sum "$name" >"$name.sha256")
+
+echo "==> built dist/$name" >&2
+"dist/$name" --version >&2
+cat "dist/$name.sha256" >&2

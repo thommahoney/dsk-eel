@@ -1,6 +1,9 @@
 # Runs the same checks as `dev/run check` and `dev/run smoke` do on a
 # developer's machine, in the same container image, for every pull request
-# and for every push to main.
+# and for every push to main. A push to main, which is what merging a pull
+# request is, also publishes the binary it builds as a release. Merges made
+# within a few minutes of each other can share one release: see the release
+# job.
 name: checks
 
 on:
@@ -17,8 +20,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The job name is the name of the status check that branch protection on
-  # main requires. Renaming it means updating that rule as well.
+  # Branch protection on main requires two status checks by job name, this
+  # one and "release build" below. Renaming either job means updating that
+  # rule as well.
   check:
     name: check
     # arm64, like the machine at the dome and the dev container on an Apple
@@ -27,6 +31,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # dev/run builds the image from dev/Dockerfile the first time it is
       # used. Doing it in a step of its own keeps the build log apart from
@@ -39,3 +45,82 @@ jobs:
 
       - name: dev/run smoke
         run: dev/run smoke
+
+  # The binary a release carries is built with dev/run release for every
+  # run, so a pull request that breaks that build cannot be merged: this
+  # job is required, like check. It is the pull request's half: it builds
+  # and publishes nothing, with a token that can only read.
+  release-build:
+    name: release build
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Name the build
+        run: echo "BUILD=$(TZ=UTC git show -s --date=format-local:%Y-%m-%d --format=%cd HEAD)-$(git rev-parse --short HEAD)" >>"$GITHUB_ENV"
+
+      - name: Build the release binary
+        run: dev/run release "$BUILD"
+
+  # A push to main, which is what merging a pull request is, builds the same
+  # binary from what is now on main and publishes it as a release, once the
+  # checks on that commit have passed. Only this job may write to the
+  # repository, and the token that can is given to the last step alone.
+  release:
+    name: release
+    if: github.event_name == 'push'
+    needs: check
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    permissions:
+      contents: write # to create the release and its tag
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A build is named after the day its commit was made (in UTC) and
+      # the commit, for example 2026-11-22-a77b7e7. That is the name of the
+      # release and its tag, and what `dsk-eel --version` prints.
+      - name: Name the build
+        run: echo "BUILD=$(TZ=UTC git show -s --date=format-local:%Y-%m-%d --format=%cd HEAD)-$(git rev-parse --short HEAD)" >>"$GITHUB_ENV"
+
+      - name: Build the release binary
+        run: dev/run release "$BUILD"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Publish only what main is at right now. If another merge has
+          # landed since this run started, or this is an old run started
+          # again, the run for the newer commit publishes that one, and an
+          # older build must not take its place as the latest.
+          tip=$(gh api "repos/$GH_REPO/commits/$GITHUB_REF_NAME" --jq .sha)
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "::notice::$GITHUB_REF_NAME is now at $tip. This run was for $GITHUB_SHA and publishes nothing."
+            exit 0
+          fi
+
+          # A published build is never replaced. A draft is what a run that
+          # was cut short leaves behind, and is made again.
+          if draft=$(gh release view "$BUILD" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != true ]; then
+              echo "::notice::$BUILD is already published and is left as it is."
+              exit 0
+            fi
+            gh release delete "$BUILD" --yes
+          fi
+
+          gh release create "$BUILD" \
+            dist/dsk-eel-linux-arm64 dist/dsk-eel-linux-arm64.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "$BUILD" \
+            --generate-notes \
+            --latest

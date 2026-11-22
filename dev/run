@@ -5,6 +5,8 @@
 #   dev/run check            build, go.mod tidiness, vet, lint, gofmt and race
 #                            tests (dev/check)
 #   dev/run smoke            race-instrumented demo run, no network (dev/smoke)
+#   dev/run release [name]   the binary a release carries, in dist/
+#                            (dev/release)
 #   dev/run go test ./...    any other command
 #   dev/run --rebuild ...    first rebuild the image from scratch, pulling a
 #                            newer base image
@@ -73,6 +75,10 @@ smoke)
 	shift
 	set -- sh /src/dev/smoke "$@"
 	network="--network none"
+	;;
+release)
+	shift
+	set -- sh /src/dev/release "$@"
 	;;
 esac
 

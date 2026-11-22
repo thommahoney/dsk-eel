@@ -2,6 +2,8 @@ package main
 
 import (
 	"net"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,5 +156,39 @@ func TestKeyboardFlag(t *testing.T) {
 	}
 	if !cfg.Keyboard {
 		t.Error("--keyboard did not turn the keyboard on")
+	}
+}
+
+// TestVersionFlag: --version is off unless given, and the line it prints
+// names the build, the Go release and the system.
+func TestVersionFlag(t *testing.T) {
+	cfg, err := parseFlags(pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError), nil)
+	if err != nil {
+		t.Fatalf("parseFlags with no arguments: %v", err)
+	}
+	if cfg.PrintVersion {
+		t.Error("--version is on with no flag")
+	}
+
+	cfg, err = parseFlags(pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError), []string{"--version"})
+	if err != nil {
+		t.Fatalf("parseFlags --version: %v", err)
+	}
+	if !cfg.PrintVersion {
+		t.Error("--version did not ask for the version")
+	}
+
+	// A build that was not given a name says "dev".
+	want := "dsk-eel dev (" + runtime.Version() + ", " + runtime.GOOS + "/" + runtime.GOARCH + ")"
+	if got := versionLine(); got != want {
+		t.Errorf("versionLine() = %q, want %q", got, want)
+	}
+
+	// A release build's name comes through.
+	old := version
+	defer func() { version = old }()
+	version = "build-12-abc1234"
+	if got := versionLine(); !strings.HasPrefix(got, "dsk-eel build-12-abc1234 (go") {
+		t.Errorf("versionLine() = %q, want it to start with the build's name", got)
 	}
 }

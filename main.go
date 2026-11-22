@@ -1,15 +1,27 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
 	"os"
+	"runtime"
 
 	"github.com/spf13/pflag"
 	"github.com/thommahoney/dsk-eel/config"
 	"github.com/thommahoney/dsk-eel/game"
 )
+
+// version names the build. A release build is given the name of its release
+// when it is linked (see dev/release); any other build says "dev".
+var version = "dev"
+
+// versionLine is what --version prints: the build, and the Go release and
+// the system it was built with and for.
+func versionLine() string {
+	return fmt.Sprintf("dsk-eel %s (%s, %s/%s)", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+}
 
 // parseFlags registers the command line flags on the given flag set, parses
 // args with it and returns the resulting configuration. main passes
@@ -21,6 +33,7 @@ func parseFlags(flags *pflag.FlagSet, args []string) (config.Config, error) {
 	flags.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
 	flags.BoolVar(&config.Keyboard, "keyboard", false, "Steer with the keyboard of this terminal instead of the joystick: arrow keys (the direction stays held), space to centre the stick, r g b y w for the buttons, q to quit")
 	flags.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
+	flags.BoolVar(&config.PrintVersion, "version", false, "Print which build this is and exit")
 	flags.IPVar(&config.ArtNetDest, "chromatik", net.IPv4(127, 0, 0, 1), "IP address of Chromatik")
 	flags.StringVar(&config.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
 	flags.StringVar(&config.ListenSubnet, "listen", "", "Subnet of the local address to send Art-Net from, e.g. 10.0.0.0/24. Empty picks the address that reaches --chromatik; give it on a machine with more than one network")
@@ -36,6 +49,11 @@ func main() {
 	config, err := parseFlags(pflag.CommandLine, os.Args[1:])
 	if err != nil {
 		log.Fatalf("invalid arguments: %s", err)
+	}
+
+	if config.PrintVersion {
+		fmt.Println(versionLine())
+		return
 	}
 
 	config.Logger = NewLogger(config.Verbosity)

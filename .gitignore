@@ -3,3 +3,6 @@ dsk-eel
 *.test
 *.out
 *.prof
+
+# release binaries built by dev/run release
+dist/

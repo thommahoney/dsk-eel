@@ -9,6 +9,27 @@ This is the classic game of snake but displayed on the inside of a geodesic dome
 - Game Mode displays the Eel game
 - Proxy Mode allows for passthrough of ArtNet data from other sources
 
+## Installing a release
+
+The machine that runs the game needs neither git nor Go. A merge to `main` publishes a binary on the [releases page](https://github.com/thommahoney/dsk-eel/releases), built with the pinned Go release and the pinned module versions. To install the newest one, or to update to it:
+
+```bash
+cd "$(mktemp -d)" &&
+curl -fLO https://github.com/thommahoney/dsk-eel/releases/latest/download/dsk-eel-linux-arm64 &&
+curl -fLO https://github.com/thommahoney/dsk-eel/releases/latest/download/dsk-eel-linux-arm64.sha256 &&
+sha256sum -c dsk-eel-linux-arm64.sha256 &&
+sudo install -m 755 dsk-eel-linux-arm64 /usr/local/bin/dsk-eel &&
+dsk-eel --version
+```
+
+`--version` says which build is installed. A game that is running keeps running the old build until it is started again.
+
+What the machine needs:
+
+- **A 64-bit system.** `dpkg --print-architecture` must say `arm64`. A 32-bit Raspberry Pi OS does not work, even on a board with a 64-bit processor; there the shell says the file is "not found".
+- **glibc 2.34 or newer**, which Raspberry Pi OS 12 (bookworm) and later have. Raspberry Pi OS 11 is too old and says so (`GLIBC_2.34 not found`).
+- **Permission to read the joystick.** `/dev/hidraw*` usually belongs to root, so run the game with `sudo`, or add a udev rule that gives your user the device.
+
 ## Development
 
 ### Dev container
@@ -24,7 +45,9 @@ dev/run                  # interactive shell
 
 `dev/run` builds the image on first use and again whenever the Dockerfile changes. The checkout is mounted at `/src`, and the Go caches are kept in the `dsk-eel-dev-cache` volume. The image's Go version and the `go` line in `go.mod` name the same release; bump them together. Set `GO_VERSION` to try a newer one first, for example `GO_VERSION=1.28 dev/run check`.
 
-Every pull request and every push to `main` runs `dev/run check` and `dev/run smoke` in GitHub Actions ([.github/workflows/checks.yml](./.github/workflows/checks.yml)), in the same image, on an arm64 runner. `main` is protected: a pull request can only be merged once that `check` job has passed.
+Every pull request and every push to `main` runs `dev/run check` and `dev/run smoke` in GitHub Actions ([.github/workflows/checks.yml](./.github/workflows/checks.yml)), in the same image, on an arm64 runner. `main` is protected: a pull request can only be merged once the `check` and `release build` jobs have passed.
+
+Merging a pull request also publishes a build: once the checks have passed on `main`, the same workflow builds the binary with `dev/run release` and puts it on the [releases page](https://github.com/thommahoney/dsk-eel/releases), named after the day and the commit, like `2026-11-22-a77b7e7`. Merges made within a few minutes of each other can end up in one build. A pull request builds the same binary without publishing it. See [Installing a release](#installing-a-release).
 
 Dependabot ([.github/dependabot.yml](./.github/dependabot.yml)) opens a pull request each month for any Go module or GitHub Action with a new release. To update by hand: `dev/run go get -u ./...`, then `dev/run go mod tidy`. Go itself and the lint tools are pinned in [dev/Dockerfile](./dev/Dockerfile).
 
