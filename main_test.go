@@ -137,3 +137,22 @@ func TestOscDestFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestKeyboardFlag: the keyboard is off unless asked for.
+func TestKeyboardFlag(t *testing.T) {
+	cfg, err := parseFlags(pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError), nil)
+	if err != nil {
+		t.Fatalf("parseFlags with no arguments: %v", err)
+	}
+	if cfg.Keyboard {
+		t.Error("the keyboard is on with no --keyboard flag")
+	}
+
+	cfg, err = parseFlags(pflag.NewFlagSet("dsk-eel", pflag.ContinueOnError), []string{"--keyboard"})
+	if err != nil {
+		t.Fatalf("parseFlags --keyboard: %v", err)
+	}
+	if !cfg.Keyboard {
+		t.Error("--keyboard did not turn the keyboard on")
+	}
+}

@@ -5,6 +5,7 @@ This is the classic game of snake but displayed on the inside of a geodesic dome
 ## Features
 
 - Support for a custom joystick device
+- Keyboard control for development without the joystick (`--keyboard`)
 - Game Mode displays the Eel game
 - Proxy Mode allows for passthrough of ArtNet data from other sources
 
@@ -34,6 +35,27 @@ Things to know:
 - `go tool pprof -top` and `-list` work; graph output (`-svg`, `-png`) needs graphviz, which is not in the image.
 - Git stays on the host; the container does not see a usable repository.
 - Each Dockerfile revision gets its own image tag. `docker images dsk-eel-dev` lists them, and old ones can be removed with `docker rmi`.
+
+### Playing without the joystick
+
+`--keyboard` reads the keyboard of the terminal the game runs in, in place of the joystick:
+
+```bash
+dev/run go run . --keyboard --chromatik <address of the machine running Chromatik>
+```
+
+| Key | Does |
+|---|---|
+| arrow keys | push the stick that way; it stays there until another arrow or space |
+| space | centre the stick |
+| `r` `g` `b` `y` `w` | the red, green, blue, yellow and white buttons |
+| `q` or ctrl-C | quit |
+
+A terminal reports that a key was pressed but not that it was let go, so this is not quite the joystick: a direction stays held, there are no diagonals, a button is a press and release in one, two buttons cannot be held together, and holding a button key down repeats the press.
+
+- With the stick centred the eel dies at its first junction, as with the joystick, so press an arrow soon after starting. With an arrow held it never dies there, so space is also how to end a game, and with `--demo` how to hand the eel back to the demo.
+- It needs a terminal on standard input, so it cannot be combined with `dev/run smoke` or run from a service. `dev/run` only passes a terminal on when its output is one too: do not pipe or redirect its standard output.
+- Ctrl-Z is switched off while the game runs. If the game crashes, the terminal can be left not showing what is typed; `stty sane` puts it right.
 
 ### Native build
 

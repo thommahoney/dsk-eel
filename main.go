@@ -19,6 +19,7 @@ func parseFlags(flags *pflag.FlagSet, args []string) (config.Config, error) {
 
 	flags.BoolVar(&config.DemoMode, "demo", false, "Randomly move eel")
 	flags.BoolVar(&config.NoJoy, "nojoy", false, "Run without a joystick connected")
+	flags.BoolVar(&config.Keyboard, "keyboard", false, "Steer with the keyboard of this terminal instead of the joystick: arrow keys (the direction stays held), space to centre the stick, r g b y w for the buttons, q to quit")
 	flags.CountVarP(&config.Verbosity, "verbose", "v", "Verbosity level eg. -v, -vv, -vvv etc.")
 	flags.IPVar(&config.ArtNetDest, "chromatik", net.IPv4(127, 0, 0, 1), "IP address of Chromatik")
 	flags.StringVar(&config.ControllerPath, "joystick", "/dev/hidraw3", "Joystick device filesystem path")
