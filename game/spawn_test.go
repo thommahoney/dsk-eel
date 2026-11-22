@@ -20,7 +20,7 @@ func TestNewFoodPositionIsUniformOnAnEmptyDome(t *testing.T) {
 	const samples = 160000
 	var starts [testSegmentLength]int
 	segments := map[*Segment]int{}
-	for i := 0; i < samples; i++ {
+	for range samples {
 		body := NewFood(g).Body
 		if len(body) != testFoodLength {
 			t.Fatalf("food has %d points, want %d", len(body), testFoodLength)
@@ -79,7 +79,7 @@ func TestNewFoodPositionIsUniform(t *testing.T) {
 	const samples = 160000
 	var starts [testSegmentLength]int
 	segments := map[*Segment]int{}
-	for i := 0; i < samples; i++ {
+	for i := range samples {
 		food := NewFood(g)
 		if touches(food.Body, covered) {
 			t.Fatalf("call %d: food touches the eel", i)

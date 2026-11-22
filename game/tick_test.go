@@ -418,7 +418,7 @@ func (m *mirroredPlay) walked(n, growth int) *Eel {
 	m.t.Helper()
 	// About one path in three ends with that much room, so the limit is
 	// never reached.
-	for attempt := 0; attempt < 1000; attempt++ {
+	for range 1000 {
 		body, dir := walkedEel(m.t, m.g, n)
 		if roomAhead(body, dir) < 8 {
 			continue
@@ -711,7 +711,7 @@ func TestMoveMatchesReference(t *testing.T) {
 
 	results := make([]playStats, workers)
 	t.Run("workers", func(t *testing.T) {
-		for w := 0; w < workers; w++ {
+		for w := range workers {
 			t.Run(fmt.Sprint(w), func(t *testing.T) {
 				t.Parallel()
 				m := &mirroredPlay{t: t, g: newLoopbackGame(t), ref: &Game{Segments: InitSegments()}}

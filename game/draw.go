@@ -35,7 +35,7 @@ func (g *Game) initDrawBuffers() {
 		0x00,       // Net
 		0x02, 0x00, // payload length 512, high byte first
 	}
-	for univ := 0; univ < universeCount; univ++ {
+	for univ := range universeCount {
 		copy(g.artnetBufs[univ][:artnetHeaderLen], header[:])
 		g.artnetBufs[univ][artnetSubUniByte] = uint8(univ)
 	}
@@ -62,7 +62,7 @@ func (g *Game) resetFrame() {
 // keep the zero they start with: the last 2 bytes of universes 0..5 and
 // everything after pixel 58 in universe 6.
 func (g *Game) Draw() {
-	for univ := 0; univ < universeCount; univ++ {
+	for univ := range universeCount {
 		buf := &g.artnetBufs[univ]
 
 		count := pixelsPerFullUniv

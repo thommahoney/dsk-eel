@@ -115,7 +115,7 @@ func TestEatFiresClip(t *testing.T) {
 
 	prefix := []byte("/live/clip/fire\x00,ii\x00\x00\x00\x00\x06\x00\x00\x00")
 	var seen [8]int
-	for meal := 0; meal < 400; meal++ {
+	for meal := range 400 {
 		g.Eel.Eat()
 
 		got := nextDatagram(conn, time.Second)

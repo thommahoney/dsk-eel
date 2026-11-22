@@ -80,7 +80,7 @@ func (s *artnetSink) datagram(wait time.Duration) []byte {
 // returns its pixels. ok is false if no frame is waiting.
 func (s *artnetSink) frame(wait time.Duration) (pixels [testPixels]Color, ok bool) {
 	s.t.Helper()
-	for univ := 0; univ < testUniverses; univ++ {
+	for univ := range testUniverses {
 		d := s.datagram(wait)
 		if d == nil {
 			if univ == 0 {
