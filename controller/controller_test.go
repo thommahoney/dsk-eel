@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -474,7 +475,8 @@ func TestNewControllerWithoutJoystick(t *testing.T) {
 	if c != nil {
 		t.Error("NewController returned a controller along with its error")
 	}
-	for _, want := range []string{path, "--joystick", "--nojoy"} {
+	// The message quotes the path, which on Windows doubles its backslashes.
+	for _, want := range []string{strconv.Quote(path), "--joystick", "--nojoy"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not mention %s: %v", want, err)
 		}

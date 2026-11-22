@@ -28,6 +28,7 @@ var (
 // TestMoveAllocationsByLength: an ordinary tick allocates nothing, however
 // long the eel is.
 func TestMoveAllocationsByLength(t *testing.T) {
+	skipWhereSendsAllocate(t)
 	for _, n := range []int{7, 50, 300, 1000} {
 		g := newLoopbackGame(t)
 		lapEel(g, n)
@@ -47,6 +48,7 @@ func TestMoveAllocationsByLength(t *testing.T) {
 // junction allocates nothing either, whether the player chose the turn or
 // demo mode did.
 func TestMoveAllocationsAtJunction(t *testing.T) {
+	skipWhereSendsAllocate(t)
 	for _, demo := range []bool{false, true} {
 		g := newLoopbackGame(t)
 		place(g, 0, 21, 7, 0.75, 5, 12, 6)
@@ -80,6 +82,7 @@ func TestMoveAllocationsAtJunction(t *testing.T) {
 // TestMoveAllocationsWhileGrowing: a tick on which the eel grows needs one
 // new Point, and nothing else while the body has spare capacity.
 func TestMoveAllocationsWhileGrowing(t *testing.T) {
+	skipWhereSendsAllocate(t)
 	g := newLoopbackGame(t)
 	place(g, 0, 6, 7, 0.75, 5, 12, 6)
 	g.Eel.Body = append(make([]*Point, 0, initialBodyCap), g.Eel.Body...)

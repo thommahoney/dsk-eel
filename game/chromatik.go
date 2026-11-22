@@ -50,6 +50,12 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 			return nil, fmt.Errorf("the local address %s (the one in the listen subnet %s, set with --listen) is a loopback address and cannot send to the Chromatik address %s (set with --chromatik), which is not on this machine; leave --listen out, or give the subnet of the network Chromatik is on",
 				ip, c.ListenSubnet, c.ArtNetDest)
 		}
+		// On Windows it cannot send to this machine's other addresses
+		// either, and that is refused for the same reason.
+		if ip.IsLoopback() && !loopbackReachesOwnAddresses && !c.ArtNetDest.IsLoopback() && !c.ArtNetDest.IsUnspecified() {
+			return nil, fmt.Errorf("the local address %s (the one in the listen subnet %s, set with --listen) is a loopback address, and on this system it cannot send to the Chromatik address %s (set with --chromatik) although that is this machine's own; leave --listen out",
+				ip, c.ListenSubnet, c.ArtNetDest)
+		}
 	}
 
 	// A socket bound to an IPv4 address cannot send to an IPv6 destination,

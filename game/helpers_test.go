@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -180,4 +181,15 @@ func place(g *Game, seg, headPos, n int, brightness float64, foodSeg, foodFrom, 
 	g.controlDir.Store(controller.Dir_Neutral)
 	g.Food = &Food{Body: line(g.Segments[foodSeg], foodFrom, foodTo), Game: g, Fresh: true}
 	g.Brightness = brightness
+}
+
+// skipWhereSendsAllocate skips a test that counts allocations on a path
+// that sends datagrams. The game's own code allocates nothing there, which
+// is what such a test pins on Linux and macOS, but on Windows the system's
+// send allocates by itself.
+func skipWhereSendsAllocate(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("sending a datagram allocates on Windows")
+	}
 }

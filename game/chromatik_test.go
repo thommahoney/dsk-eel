@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -286,8 +287,20 @@ func TestInitChromatikRejectsLoopbackListenWithRemoteDestination(t *testing.T) {
 func TestInitChromatikAcceptsLoopbackListenWithLocalDestination(t *testing.T) {
 	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2), net.IPv4zero}
 	for _, own := range ownAddresses(t) {
-		if own.To4() != nil {
+		if own.To4() == nil {
+			continue
+		}
+		if loopbackReachesOwnAddresses {
 			dests = append(dests, own)
+			continue
+		}
+		// Windows: from loopback every send to the address would fail,
+		// so the pairing is refused, with a way out.
+		chromatik, err := initChromatikForTest(t, chromatikConfig("127.0.0.1/24", own))
+		if err == nil {
+			t.Errorf("destination %v with a loopback --listen: no error; the socket was bound to %v", own, chromatik.ArtNetConnection.LocalAddr())
+		} else if !strings.Contains(err.Error(), "leave --listen out") {
+			t.Errorf("destination %v with a loopback --listen: the error does not say what to do: %v", own, err)
 		}
 	}
 	for _, dest := range dests {
@@ -511,6 +524,10 @@ func TestLocalAddrForOwnAddresses(t *testing.T) {
 // a link-local address, which cannot be used without naming an interface,
 // so it fails on every machine whatever its routes are.
 func TestLocalAddrForUnreachable(t *testing.T) {
+	// Windows finds a way to a link-local address with no interface named.
+	if runtime.GOOS == "windows" {
+		t.Skip("fe80::1 is not unreachable on Windows")
+	}
 	_, err := localAddrFor(net.ParseIP("fe80::1"))
 	if err == nil {
 		t.Fatal("localAddrFor(fe80::1) succeeded")

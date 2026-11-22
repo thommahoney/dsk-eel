@@ -1,0 +1,4 @@
+# Text files are checked out with Unix line ends on every system. The shell
+# scripts in dev/ do not run with Windows line ends, and gofmt wants Go
+# files without them.
+* text=auto eol=lf

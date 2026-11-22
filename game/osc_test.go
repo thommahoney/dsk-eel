@@ -438,6 +438,7 @@ func TestOscConcurrentSends(t *testing.T) {
 // A send must not allocate: the game loop sends to Ableton, and the
 // joystick goroutine sends ten messages to Chromatik per button press.
 func TestOscSendDoesNotAllocate(t *testing.T) {
+	skipWhereSendsAllocate(t)
 	g, _ := newTestGame(t)
 	client := g.Chromatik.OscClient
 	for _, tc := range []struct {
