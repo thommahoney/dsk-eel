@@ -180,6 +180,48 @@ func TestKeyboardEscapeSequences(t *testing.T) {
 	ty.wantNothingMore()
 }
 
+// TestKeyboardEscStartsOver: some keys are a sequence that never ends. Alt-[
+// sends ESC [ and nothing more, and alt-shift-O sends ESC O. The ESC of the
+// key pressed next starts that key's sequence and is not read as more of
+// the unfinished one, or the down arrow, ESC [ B, would lose its start and
+// press the blue button with its B, and F2, which xterm sends as ESC O Q,
+// would quit.
+func TestKeyboardEscStartsOver(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		unfinished string
+	}{
+		{"alt-[", "\x1b["},
+		{"alt-shift-O", "\x1bO"},
+		{"a modified key cut off after its numbers", "\x1b[1;5"},
+		{"a linux console function key cut off before its letter", "\x1b[["},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ty := startTypist(t)
+
+			ty.keys(c.unfinished + keyDown)
+			ty.want(Dir_South, Btn_None)
+			ty.keys(c.unfinished + keyUp)
+			ty.want(Dir_North, Btn_None)
+			ty.keys(c.unfinished + "\x1bOD")
+			ty.want(Dir_West, Btn_None)
+			ty.keys(c.unfinished + "\x1b[1;2C") // shift-right
+			ty.want(Dir_East, Btn_None)
+
+			// F2 is not a key the game knows. The reader is outside a
+			// sequence after it: the g is the green button.
+			ty.keys(c.unfinished + "\x1bOQ" + "g")
+			ty.want(Dir_East, Btn_Green)
+			ty.want(Dir_East, Btn_None)
+			ty.wantNothingMore()
+
+			if n := ty.quits.Load(); n != 0 {
+				t.Errorf("quit was called %d times, want never", n)
+			}
+		})
+	}
+}
+
 // TestKeyboardIgnoresOtherKeys types keys that mean nothing here, among
 // them ones that arrive as escape sequences, and then one that does mean
 // something: the reader must have reported nothing before it and must not
