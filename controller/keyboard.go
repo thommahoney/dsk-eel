@@ -31,7 +31,8 @@ type Keyboard struct {
 	// held. escape is how far into a terminal escape sequence the reader
 	// is: an arrow key arrives as ESC [ A, or ESC O A, not as one byte.
 	// A key that is not understood still has to be read to its end, or
-	// its last letter would be taken for a key of its own.
+	// its last letter would be taken for a key of its own. These two are
+	// all the reader remembers from one byte to the next.
 	direction Direction
 	escape    int
 
@@ -90,13 +91,22 @@ func (k *Keyboard) run(in io.Reader) {
 // key takes the next byte from the terminal. It reports whether the byte
 // asks to quit.
 func (k *Keyboard) key(b byte) (quit bool) {
+	// ESC starts a sequence wherever it comes, also inside one that has
+	// not ended. Alt-[ sends ESC [ and nothing more, so the ESC of the
+	// next key arrives in what looks like the middle of a sequence. Were
+	// it read as part of that one, the next key would lose its start and
+	// its last letter would be taken for a key of its own: the down
+	// arrow, ESC [ B, would press the blue button.
+	if b == 0x1b {
+		k.escape = escapeStarted
+		return false
+	}
+
 	switch k.escape {
 	case escapeStarted:
 		switch b {
 		case '[', 'O':
 			k.escape = escapeOpened
-		case 0x1b:
-			// Still at the start of a sequence.
 		default:
 			// Alt held with a key sends ESC and then the key. That is
 			// not the key by itself, so it is dropped: alt-left must
@@ -135,8 +145,6 @@ func (k *Keyboard) key(b byte) (quit bool) {
 	}
 
 	switch b {
-	case 0x1b:
-		k.escape = escapeStarted
 	case ' ':
 		k.steer(Dir_Neutral)
 	case 'r', 'R':
