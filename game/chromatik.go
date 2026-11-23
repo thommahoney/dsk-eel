@@ -209,7 +209,6 @@ var buttonToOSCAddress = map[controller.ButtonStatus][]string{
 	controller.Btn_Blue:   {"/lx/mixer/channel/5/fader", "/lx/mixer/channel/6/fader"},
 	controller.Btn_Yellow: {"/lx/mixer/channel/7/fader", "/lx/mixer/channel/8/fader"},
 	controller.Btn_White:  {"/lx/mixer/channel/9/fader"},
-	// controller.Btn_None:   {},
 }
 
 func (c *Chromatik) OscSend(address string, value float32) error {

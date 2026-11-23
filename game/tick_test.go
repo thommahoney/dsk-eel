@@ -129,7 +129,7 @@ func checkGraphIntact(t *testing.T, g *Game) {
 	fresh := InitSegments()
 	for i, s := range g.Segments {
 		want := fresh[i]
-		if s.Label != want.Label || s.Offset != want.Offset || s.Length != want.Length || s.Color != want.Color {
+		if s.Label != want.Label || s.Offset != want.Offset {
 			t.Errorf("segment %d is %s at offset %d, want %s at offset %d", i, s.Label, s.Offset, want.Label, want.Offset)
 		}
 		wantHops := hops(want)

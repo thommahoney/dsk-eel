@@ -110,7 +110,6 @@ func NewFood(g *Game) *Food {
 		Body:  newBodyAt(segment, start, GrowthIncrement),
 		Game:  g,
 		Fresh: true,
-		Hue:   rand.Float64() * 360.0,
 	}
 }
 
@@ -435,7 +434,6 @@ type Food struct {
 	Body  []*Point
 	Fresh bool
 	Game  *Game
-	Hue   float64
 }
 
 // draw paints the given food points into the frame, over whatever is
@@ -474,10 +472,7 @@ type Hop struct {
 // Represents a physical dome pipe segment and the lights on it
 type Segment struct {
 	Label  string
-	Length int
 	Offset int
-
-	Color Color
 
 	// [Greater|Lesser][Up|Down|Left|Right] hops
 	// are akin to traversing a graph or a tree structure
@@ -567,6 +562,6 @@ type Point struct {
 	Segment *Segment
 
 	// LED closest to the ground cable is Position 0
-	// LED furthest from the ground cable is Position (Segment.Length - 1)
+	// LED furthest from the ground cable is Position (SegmentLength - 1)
 	Position int
 }

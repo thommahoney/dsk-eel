@@ -7,7 +7,6 @@ This is the classic game of snake but displayed on the inside of a geodesic dome
 - Support for a custom joystick device
 - Keyboard control for development without the joystick (`--keyboard`), on Linux, macOS and Windows
 - Game Mode displays the Eel game
-- Proxy Mode allows for passthrough of ArtNet data from other sources
 
 ## Installing a release
 
@@ -119,7 +118,7 @@ Things to know:
 - The checkout, and any git worktree of it, must be somewhere the container runtime shares with its VM. With Colima's defaults that is only `$HOME`, so not `/tmp`.
 - `dev/run check` runs the tests twice, with the race detector and without. The detector makes them many times slower, so the longest tests do less work under it; the run without it is the one where they run at full length.
 - `dev/run smoke` runs the game with `--nojoy --demo` for five seconds and fails on a data race or a crash. It runs without a network, with `--ableton` pointed at loopback so the Ableton code is exercised. It does not exercise the joystick goroutine.
-- Builds are for the VM's architecture (linux/arm64 on an Apple silicon Mac). The image cannot cross-compile, because go-hid needs cgo.
+- A build is for the VM's system and architecture (linux/arm64 on an Apple silicon Mac) unless `GOOS` and `GOARCH` name another. A build for another one has no joystick: go-hid needs cgo, and the image's C compiler only builds for where it runs. It plays from the keyboard only, which is how the Windows release is made: `dev/run env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 sh dev/release`.
 - Every container shares the VM's CPUs, so a build running in another checkout shifts benchmark results by 10–20%. Take before and after numbers with nothing else running, use `-count 8` or more, and compare with `benchstat old.txt new.txt`.
 - `go tool pprof -top` and `-list` work; graph output (`-svg`, `-png`) needs graphviz, which is not in the image.
 - Git stays on the host; the container does not see a usable repository.

@@ -1,7 +1,9 @@
 package game
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
@@ -275,7 +277,11 @@ func (g *Game) HandleControllerLost() {
 // in one load a tick, and pause in another), and never the eel or the
 // frame.
 func (g *Game) HandleControllerState(state controller.ControllerState) {
-	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
+	// The names of the stick position and of the buttons are only put
+	// together when the line is wanted, which without -v it is not.
+	if g.Config.Logger.Enabled(context.Background(), slog.LevelInfo) {
+		g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
+	}
 
 	// The direction, and the end of demo mode and of a joystick loss, go
 	// into the input state in one step, so no tick sees demo mode ended
@@ -313,9 +319,9 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 	// pressed is the one in effect.
 	//
 	// Buttons that go down in the same state are a press of one of them.
-	// Taken together they match no fader, so every channel would go to 0
-	// and stay there, with nothing showing, until the next press. A bit
-	// that is none of the five buttons is not a press at all.
+	// Taken together they are no button and match no fader, and the press
+	// would be lost. A bit that is none of the five buttons is not a press
+	// at all.
 	g.HandleButtonPress(firstButton(wentDown))
 }
 
@@ -340,16 +346,14 @@ func firstButton(buttons controller.ButtonStatus) controller.ButtonStatus {
 	return controller.Btn_None
 }
 
-// HandleButtonPress runs the action of a button. HandleControllerState
-// always passes it a single button, so what it does with several at once
-// is only reached by calling it directly.
+// HandleButtonPress runs the action of one button. HandleControllerState
+// passes it one of the five buttons, or no button for a bit that is none
+// of them (see firstButton). Anything that is not one button by itself,
+// no button or several at once, is not a press and does nothing.
 func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
-	if status == controller.Btn_None {
-		// No-Op
+	if _, oneButton := buttonToOSCAddress[status]; !oneButton {
 		return
 	}
-
-	// @todo add back an easter egg for multiple buttons pressed
 
 	g.buttonIndex += 1
 	if g.buttonIndex >= 2 {
@@ -385,6 +389,7 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 		g.Pause()
 	}
 
+	// Only a color gets this far.
 	var swatch int
 	switch status {
 	case controller.Btn_Red:
@@ -395,9 +400,6 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 		swatch = 3
 	case controller.Btn_Yellow:
 		swatch = 4
-	default:
-		// multiple buttons pressed?
-		swatch = 1
 	}
 
 	err := g.Chromatik.OscSend_swatch(swatch)

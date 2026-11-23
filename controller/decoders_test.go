@@ -72,9 +72,8 @@ func (r byteRange) has(b byte) bool { return r.lo <= b && b <= r.hi }
 // range, between middle and high, is no position of the stick.
 //
 // Byte 0 is the axis that tells east from west and byte 1 the one that
-// tells north from south, going by the names of the directions. GetDirection
-// calls its two local variables the other way round (updown for byte 0); the
-// names of the directions are what the game steers by.
+// tells north from south, going by the names of the directions, which are
+// what the game steers by.
 var (
 	axisLow    = byteRange{0x00, 0x3f} // east on byte 0, south on byte 1
 	axisMiddle = byteRange{0x40, 0x7f} // centred

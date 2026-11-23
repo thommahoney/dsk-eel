@@ -135,12 +135,51 @@ func TestDebugLogOfAReport(t *testing.T) {
 		!bytes.Equal(l.attrs["bytes"].([]byte), device.reports[0][:]) {
 		t.Errorf("first line is %q %v", l.msg, l.attrs)
 	}
-	// North is the up-down axis at 1 and the left-right axis at 3.
-	if l := got[1]; l.msg != "GetDirection" || l.attrs["updown"] != uint64(1) || l.attrs["leftright"] != uint64(3) {
+	// North is the left-right axis centred, at 1, and the up-down axis
+	// at 3.
+	if l := got[1]; l.msg != "GetDirection" || l.attrs["leftright"] != uint64(1) || l.attrs["updown"] != uint64(3) {
 		t.Errorf("second line is %q %v", l.msg, l.attrs)
 	}
 	if l := got[2]; l.msg != "GetStatus" || l.attrs["buttons"] != uint64(Btn_Red|Btn_White) {
 		t.Errorf("third line is %q %v", l.msg, l.attrs)
+	}
+}
+
+// TestDebugLogNamesTheAxisTheStickMovedOn pushes the stick each of the four
+// ways and reads the two axes out of the -vv log, as someone checking the
+// wiring of a joystick would. An axis at rest is logged as 1. North and
+// south must move the one logged as updown and leave leftright at rest,
+// and east and west the other way round.
+func TestDebugLogNamesTheAxisTheStickMovedOn(t *testing.T) {
+	for _, tc := range []struct {
+		dir               Direction
+		updown, leftright uint64
+	}{
+		{Dir_Neutral, 1, 1},
+		{Dir_North, 3, 1},
+		{Dir_South, 0, 1},
+		{Dir_East, 1, 0},
+		{Dir_West, 1, 3},
+	} {
+		t.Run(tc.dir.String(), func(t *testing.T) {
+			log := &logRecorder{min: slog.LevelDebug}
+			j := NewJoystick(slog.New(log))
+			if got := j.GetDirection(report(tc.dir, Btn_None)); got != tc.dir {
+				t.Fatalf("the report decodes to %s, want %s", got, tc.dir)
+			}
+			if len(log.records) != 1 {
+				t.Fatalf("decoding one report logged %d lines, want 1", len(log.records))
+			}
+			got := map[string]any{}
+			log.records[0].Attrs(func(a slog.Attr) bool {
+				got[a.Key] = a.Value.Any()
+				return true
+			})
+			if got["updown"] != tc.updown || got["leftright"] != tc.leftright {
+				t.Errorf("with the stick at %s the log says updown=%v leftright=%v, want updown=%d leftright=%d",
+					tc.dir, got["updown"], got["leftright"], tc.updown, tc.leftright)
+			}
+		})
 	}
 }
 

@@ -475,15 +475,17 @@ func NewJoystick(logger *slog.Logger) *Joystick {
 }
 
 func (j *Joystick) GetDirection(data []byte) Direction {
-	updown, leftright := data[0]>>6, data[1]>>6
+	// Byte 0 is the axis that tells east from west and byte 1 the one that
+	// tells north from south, going by the direction constants.
+	leftright, updown := data[0]>>6, data[1]>>6
 
 	if j.logger.Enabled(context.Background(), slog.LevelDebug) {
-		j.logger.Debug("GetDirection", "updown", updown, "leftright", leftright)
+		j.logger.Debug("GetDirection", "leftright", leftright, "updown", updown)
 	}
 
 	direction := 0
-	direction += int(updown << 2)
-	direction += int(leftright)
+	direction += int(leftright << 2)
+	direction += int(updown)
 
 	return Direction(direction)
 }
