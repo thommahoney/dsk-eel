@@ -468,7 +468,7 @@ func TestNewFoodWithAnEmptyEel(t *testing.T) {
 // there, and it may be on the segment the head has left.
 func TestNewFoodAfterCrossingAJunction(t *testing.T) {
 	g, _ := newTestGame(t)
-	g.demoMode.Store(true)
+	setDemo(g, true)
 
 	onSegmentLeft := 0
 	for i := range 3000 {
@@ -734,7 +734,7 @@ func TestNewFoodNoRoom(t *testing.T) {
 func TestFoodSpawnsOffEelInPlay(t *testing.T) {
 	t.Parallel()
 	g, _ := newTestGame(t)
-	g.demoMode.Store(true)
+	setDemo(g, true)
 
 	spawns, games, longest := 0, 0, 0
 	checkSpawn := func(tick int) {

@@ -92,13 +92,13 @@ func count(pixels [testPixels]Color, c Color) int {
 func TestInputBeforeFirstGame(t *testing.T) {
 	g, sink := newTestGame(t)
 
-	if got := g.controlDir.Load(); got != controller.Dir_Neutral {
+	if got := g.input.Load().direction(); got != controller.Dir_Neutral {
 		t.Fatalf("a new game holds direction %v, want Neutral", got)
 	}
 	for _, dir := range allDirections {
 		for buttons := range controller.ButtonStatus(32) {
 			g.HandleControllerState(input(dir, buttons))
-			if got := g.controlDir.Load(); got != dir {
+			if got := g.input.Load().direction(); got != dir {
 				t.Fatalf("after input %v the held direction is %v", dir, got)
 			}
 		}
@@ -260,13 +260,13 @@ func TestDemoModeEndsOnFirstInput(t *testing.T) {
 	for game := range 2 {
 		done := startGame(g)
 		sink.mustFrame()
-		if !g.demoMode.Load() {
+		if !g.input.Load().demo() {
 			t.Fatalf("game %d: not in demo mode at the start", game)
 		}
 
 		// A neutral stick is input too: the player let go of it.
 		g.HandleControllerState(input(controller.Dir_Neutral, controller.Btn_None))
-		if g.demoMode.Load() {
+		if g.input.Load().demo() {
 			t.Fatalf("game %d: still in demo mode after an input", game)
 		}
 		// Out of demo mode a neutral stick ends the game at the next junction.
@@ -291,7 +291,7 @@ func TestDemoModeSteersAtJunction(t *testing.T) {
 
 	// It picks north, south, east or west, and all four lead somewhere
 	// from every segment.
-	g.demoMode.Store(true)
+	setDemo(g, true)
 	for try := range 64 {
 		if err := atJunction(); err != nil {
 			t.Fatalf("demo mode, try %d: %v", try, err)
@@ -300,7 +300,7 @@ func TestDemoModeSteersAtJunction(t *testing.T) {
 
 	// A held direction wins over demo mode.
 	place(g, 0, 21, 7, 1.0, 20, 12, 6)
-	g.controlDir.Store(controller.Dir_North)
+	setStick(g, controller.Dir_North)
 	if err := g.Eel.Move(); err != nil {
 		t.Fatalf("demo mode with north held: %v", err)
 	}
