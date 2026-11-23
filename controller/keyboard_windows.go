@@ -12,8 +12,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The exit status Windows gives a program that ctrl-C ended.
-const statusControlCExit = 0xC000013A
+// The exit status Windows gives a program that ctrl-C ended, 0xC000013A.
+// It is written as the negative number with the same 32 bits, which is what
+// Windows is handed either way, because the positive one does not fit an
+// int where an int is 32 bits.
+const statusControlCExit = 0xC000013A - 1<<32
 
 // NewKeyboard starts reading the keyboard from standard input, which has to
 // be a console window. The console is set to hand over each key as it is
