@@ -152,8 +152,14 @@ jobs:
 
   # A push to main, which is what merging a pull request is, builds the same
   # binary from what is now on main and publishes it as a release, once the
-  # checks on that commit have passed. Only this job may write to the
-  # repository, and the token that can is given to the last step alone.
+  # checks on that commit have passed.
+  #
+  # Two jobs have a token that can write to the repository: this one and
+  # release (macos) below. Of their run steps, only the last is given it.
+  # The actions get it without being asked, as an input that defaults to the
+  # job's token: actions/checkout in both jobs, which is told not to leave
+  # it in the checkout (persist-credentials: false), and actions/setup-go in
+  # release (macos). Both actions are pinned to a commit.
   release:
     name: release
     if: github.event_name == 'push'
@@ -217,7 +223,8 @@ jobs:
   # Adds the macOS binary to the release the job above has just published.
   # It is built on a Mac, because the joystick library is C code that cannot
   # be built for macOS from Linux, with the Go release go.mod names and the
-  # module versions go.sum pins.
+  # module versions go.sum pins. If the upload fails part of the way, running
+  # this job again finishes it.
   release-macos:
     name: release (macos)
     if: github.event_name == 'push'
@@ -246,15 +253,84 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          scratch=$(mktemp -d)
+
           # The release job publishes nothing when main has moved on, and
-          # then there is nothing to add to.
-          if ! gh release view "$BUILD" >/dev/null 2>&1; then
-            echo "::notice::There is no release $BUILD, so the macOS binary is not published."
+          # then there is nothing to add to. Only GitHub's own answer that
+          # there is no such release (HTTP 404) is read that way. Any other
+          # failure of the call fails the job, so that a network or API
+          # error is not taken for a missing release.
+          if ! gh api "repos/$GH_REPO/releases/tags/$BUILD" \
+            --jq '.assets[] | "\(.name) \(.state) \(.digest)"' \
+            >"$scratch/assets" 2>"$scratch/error"; then
+            if grep -q '(HTTP 404)' "$scratch/error"; then
+              echo "::notice::There is no release $BUILD, so the macOS binary is not published."
+              exit 0
+            fi
+            cat "$scratch/error" >&2
+            echo "::error::Could not read the release $BUILD, so nothing was uploaded. Run this job again."
+            exit 1
+          fi
+
+          # Decide for both files, from that one reading of the release,
+          # before changing anything. The files to upload are collected in
+          # "$@".
+          set --
+          leftover=
+          stop=
+          for f in dsk-eel-darwin-arm64 dsk-eel-darwin-arm64.sha256; do
+            state=$(awk -v name="$f" '$1 == name { print $2 }' "$scratch/assets")
+            theirs=$(awk -v name="$f" '$1 == name { print $3 }' "$scratch/assets")
+            case $state in
+            "")
+              set -- "$@" "dist/$f"
+              ;;
+            uploaded)
+              # A published file is never replaced, and it has to be the
+              # file built here: otherwise adding the other one would
+              # publish a binary and a checksum that do not belong together.
+              ours=sha256:$(shasum -a 256 <"dist/$f" | cut -d ' ' -f 1)
+              case $theirs in
+              "$ours") ;;
+              sha256:*)
+                echo "::error::$BUILD already has $f, and it is not the file this run built. The release has $theirs, this run built $ours."
+                stop=1
+                ;;
+              *)
+                # GitHub's API may give no SHA-256 for a file (it then says
+                # null). The file may well be the one built here, but this
+                # job cannot know, so it must not say that it differs.
+                echo "::error::$BUILD already has $f, but GitHub reports no SHA-256 for it, so this job cannot tell whether it is the file this run built."
+                stop=1
+                ;;
+              esac
+              ;;
+            starter | open)
+              # Not a published file but what an upload that broke off can
+              # leave behind. GitHub's API documentation says a failed
+              # upload may leave an empty file in the state "starter", which
+              # can be safely deleted; "open" is the only other state it
+              # lists besides "uploaded".
+              leftover="$leftover $f"
+              set -- "$@" "dist/$f"
+              ;;
+            *)
+              echo "::error::$BUILD has $f in a state this job does not know: $state."
+              stop=1
+              ;;
+            esac
+          done
+          if [ -n "$stop" ]; then
+            echo "::error::Nothing was uploaded or deleted: this job never replaces a published file. If the release should have this run's files instead, delete the ones named above from it by hand and run this job again."
+            exit 1
+          fi
+          if [ $# -eq 0 ]; then
+            echo "::notice::$BUILD already has the macOS binary and its checksum, the same as this run built."
             exit 0
           fi
-          # A file that is already there is never replaced.
-          if gh release view "$BUILD" --json assets --jq '.assets[].name' | grep -qx dsk-eel-darwin-arm64; then
-            echo "::notice::$BUILD already has the macOS binary."
-            exit 0
-          fi
-          gh release upload "$BUILD" dist/dsk-eel-darwin-arm64 dist/dsk-eel-darwin-arm64.sha256
+
+          for f in $leftover; do
+            gh release delete-asset "$BUILD" "$f" --yes
+          done
+          # Without --clobber, so that this can only ever add a file.
+          gh release upload "$BUILD" "$@"
