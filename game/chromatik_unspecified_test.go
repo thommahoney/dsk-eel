@@ -71,7 +71,8 @@ func TestUnspecifiedDestError(t *testing.T) {
 
 // On a system where nothing can be sent to the unspecified address, which
 // Windows is, the game must not start with it as a destination: every
-// Art-Net frame and OSC message would be lost, the frames without a word.
+// Art-Net frame and OSC message would be lost, the frames with no more than
+// one warning in the log.
 // That goes for --chromatik, with or without --listen, and for --osc-dest.
 // The error names the one flag that has to change and what to give it.
 //

@@ -26,8 +26,8 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 // unspecifiedReachesThisMachine; a test can give the other one.
 func initChromatik(c *config.Config, unspecifiedReaches bool) (*Chromatik, error) {
 	// To16 is nil for anything that is not a 4 or 16 byte address. Sends
-	// to such a destination would all fail, and Draw does not report
-	// failed sends, so it is refused here.
+	// to such a destination would all fail, and Draw only logs a warning
+	// and plays on, so it is refused here.
 	if c.ArtNetDest.To16() == nil {
 		return nil, fmt.Errorf("invalid Chromatik address %q (set with --chromatik)", c.ArtNetDest.String())
 	}
@@ -58,8 +58,8 @@ func initChromatik(c *config.Config, unspecifiedReaches bool) (*Chromatik, error
 			return nil, err
 		}
 		// A socket bound to a loopback address can only send to this
-		// machine. To anywhere else every send would fail, and Draw does
-		// not report failed sends, so that pairing is refused here.
+		// machine. To anywhere else every send would fail, and Draw only
+		// logs a warning and plays on, so that pairing is refused here.
 		if ip.IsLoopback() && !onThisMachine(c.ArtNetDest, addrs) {
 			return nil, fmt.Errorf("the local address %s (the one in the listen subnet %s, set with --listen) is a loopback address and cannot send to the Chromatik address %s (set with --chromatik), which is not on this machine; leave --listen out, or give the subnet of the network Chromatik is on",
 				ip, c.ListenSubnet, c.ArtNetDest)
@@ -73,8 +73,8 @@ func initChromatik(c *config.Config, unspecifiedReaches bool) (*Chromatik, error
 	}
 
 	// A socket bound to an IPv4 address cannot send to an IPv6 destination,
-	// nor the other way round. Every send would fail, and Draw does not
-	// report failed sends, so a mix is refused here as well. It can only
+	// nor the other way round. Every send would fail, and Draw only logs
+	// a warning and plays on, so a mix is refused here as well. It can only
 	// happen with --listen: an address chosen from the route to the
 	// destination is of the destination's kind.
 	if (ip.To4() == nil) != (c.ArtNetDest.To4() == nil) {
@@ -125,8 +125,8 @@ func initChromatik(c *config.Config, unspecifiedReaches bool) (*Chromatik, error
 
 // unspecifiedDestError returns the error for a destination that is the
 // unspecified address, 0.0.0.0 or ::, on a system where nothing can be
-// sent to it: every send would fail, and Draw does not report failed
-// sends. On a system where what is sent there arrives on this machine,
+// sent to it: every send would fail, and Draw only logs a warning and
+// plays on. On a system where what is sent there arrives on this machine,
 // which unspecifiedReaches says, and for every other destination it
 // returns nil. what and flag name the destination in the message, which
 // says what to give for a Chromatik on this machine.

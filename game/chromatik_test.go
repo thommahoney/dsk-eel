@@ -252,7 +252,7 @@ func TestInitChromatikSendsToTheConfiguredDestination(t *testing.T) {
 }
 
 // A socket bound to loopback cannot send to another machine: every send
-// fails, and failed sends are not reported during play. So a loopback
+// fails, and during play that is only a warning in the log. So a loopback
 // --listen subnet (the default before --listen became optional) with a
 // --chromatik address that is not on this machine must be refused at
 // startup, with a message that names both flags. Broadcast and multicast
@@ -329,9 +329,9 @@ func hasIPv6Loopback(t *testing.T) bool {
 }
 
 // A socket bound to an IPv4 address cannot send to an IPv6 destination, or
-// the other way round, and failed sends are not reported during play. So a
-// --chromatik address of one kind with a --listen subnet of the other must
-// be refused at startup, with a message that names both flags.
+// the other way round, and during play that is only a warning in the log.
+// So a --chromatik address of one kind with a --listen subnet of the other
+// must be refused at startup, with a message that names both flags.
 func TestInitChromatikRejectsMixedIPv4AndIPv6(t *testing.T) {
 	cases := []struct {
 		name, listenSubnet string

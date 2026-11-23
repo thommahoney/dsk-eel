@@ -78,6 +78,21 @@ dsk-eel --joystick /dev/dsk-eel-joystick
 
 The rule is for a USB joystick (its `HID_ID` starts with `0003`). It has not been tried with the joystick yet. If the list shows two devices with the joystick's `HID_ID`, the rule matches both and the new path stands for only one of them, so check with the log line that it is the one that works.
 
+### The network
+
+The game sends each frame to Chromatik as seven Art-Net packets. If the system does not take one of them, the log says so once, with the system's error, and once more when a whole frame gets out again:
+
+```
+time=2026-11-22T20:15:04.512Z level=WARN msg="cannot send Art-Net frames, will keep trying" error="write udp 10.0.0.7:41234->10.0.0.5:6454: sendto: network is unreachable"
+time=2026-11-22T20:15:19.352Z level=WARN msg="sending Art-Net frames again" failed_frames=212
+```
+
+In between the game plays on, tries every frame and logs nothing more about it, so the first line without the second means that frames are still not getting out. The second line is a warning for the same reason as the joystick's.
+
+The game sends from the address this machine had on the network when the game started. If the machine loses that address, frames get out again when it has the same address back. If it comes back with a different address they do not, and the game has to be started again.
+
+These lines are only about sending. With Chromatik not running, or out of reach on a network that is up, every packet is sent without an error and the log shows nothing.
+
 ## Development
 
 ### Dev container
