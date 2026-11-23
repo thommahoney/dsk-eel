@@ -156,7 +156,7 @@ func TestButtonHeldWhileStickMoves(t *testing.T) {
 	for _, dir := range stickTour {
 		g.HandleControllerState(input(dir, controller.Btn_Red))
 		sink.expectNone(fmt.Sprintf("moving the stick to %v with red held", dir))
-		if got := g.controlDir.Load(); got != dir {
+		if got := g.input.Load().direction(); got != dir {
 			t.Errorf("held direction is %v, want %v", got, dir)
 		}
 	}
