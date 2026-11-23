@@ -188,6 +188,48 @@ sudo apt install golang-go
 go build
 ```
 
+## What is checked, and how
+
+`dev/run check` runs every test there is, but the tests do not all show the same kind of thing. Some go through every case a part of the program can meet. Some things cannot go wrong because of the way the code is written. Some tests try a great many cases out of far more than can be tried. And some things no test here can reach. This section says which is which, so that nobody takes the third kind for the first. None of it adds up to a proof that the game is right.
+
+### Every case there is
+
+These parts are small enough to go through from end to end, so their tests pick no examples.
+
+- **The dome graph**, the table in [game/init.go](./game/init.go) that says which segment follows which: 49 segments with 392 links between their 98 ends. Every pixel of the frame belongs to exactly one segment. Every link comes onto another segment at one of its ends. Wherever an eel can go from one end to another, it can also come back. The ends meet in 28 junctions of three, two joints of two and a ring of ten round the foot of the dome, and in no other way. From every segment, travelling either way, an eel can get to every other. The table is also kept a second time, as the listing [game/testdata/dome-graph.txt](./game/testdata/dome-graph.txt), and compared with it link for link, so that a link that changes shows as a changed line to review.
+- **The steering rule**: which way the eel goes at the end of a segment, for each of the 16 values the four bits of the stick can have and both ways of travelling. It is checked on every segment of the dome, 1,568 cases, and on all 256 ways the four turns of a junction can share their links. A stick held up, down, left or right always leads on. A centred stick never does. A diagonal leads on only where its two turns lead the same way.
+- **The joystick decoders**: each of the two reads two bytes of a report, and is checked for all 65,536 values those can have, against a table written out separately.
+- **The keyboard reader**: it remembers how far into an escape sequence it is, one of five places, and where the stick is held, one of five positions, and the next byte has 256 values. All 6,400 steps are checked, and an arrow key steers from each of the 25 things the reader can remember, so what holds for a step holds for input of any length. Apart from that, every string of up to three bytes in which no key quits, 16.3 million of them, is typed ahead of each arrow.
+- **One step of the eel's head**: from every position and direction the head can have, with every value of the stick, where it goes next and whether the game ends there.
+- **The buttons**: every change from one set of held buttons to another, and which press it counts as.
+
+What "every case" leaves open: each of these compares the code with the rule written down a second time, in the test. A rule that is wrong in both places passes.
+
+### True by the way it is written
+
+- **A tick plays by one input.** The stick, demo mode and the lost joystick are one word in memory. A tick reads it once, and whatever changes it replaces it whole, so a tick cannot play by the stick of one moment and the demo mode of another. The tests check what this rests on: every value of the word, every event that changes it, and that a tick uses nothing but what it read.
+- **The Art-Net layout.** [game/draw.go](./game/draw.go) states the layout as constants the compiler has to work out: the 49 x 22 pixels are six universes of 170 and a last one of 58, the last one has at least 1 pixel and at most 170, and the pixels of a universe fit in its 512 bytes of data and in the packet buffer, which is the header and those 512 bytes and nothing more. A number that breaks one of these stops the build.
+
+### To a depth, or on a sample
+
+A whole game is an eel of up to 1,078 pixels on a dome with food on it, which is far more states than can be gone through. Here the tests try a great many, and say how many.
+
+- **A whole tick, against a second model of it.** The tests hold a second description of a tick, written from the rules. It shares no code with the game, and it reads the dome from the listing, not from the table. A real tick and the model's are played side by side and compared after every one: the eel point for point, what it has left to grow, the way it travels, the food and whether it has been bitten, all 1,078 pixels of the frame, and the bytes of the seven Art-Net packets, as they are built and, for some games, read back from a socket. On every tick the eel must also be in one piece, be on no pixel twice unless that is what ended the game, have between 0 and 7 left to grow, and be as long as its meals make it.
+  - *To a depth:* every input (the 16 stick values, in a demo or not, with the joystick lost or not) at every junction, on every route through the first seven junctions from each of the 49 segments an eel can start on. That is 1.8 million ticks, and reaches 12 seconds into a game. Between junctions the input does not steer, it only decides which turn signals are drawn, and there each tick is played by one input of the 64. They are picked so that every input is played with the head on every pixel, travelling either way, which is 131,712 combinations, but each on some route and not on every one. So up to that depth every route and every way of steering is gone through. The signals drawn between junctions are gone through for every pixel and input, but not for every eel that can be there. What the game chooses by chance is left to chance. Past that depth, this shows nothing.
+  - *On a sample:* 400,000 ticks of random games, with the game steering itself, with a stick that wanders, and with a player going after the food, and with eels of several hundred pixels.
+- **Where new food goes.** Every new food is held against all 784 places a food can be: it is never on the eel while a free place exists, and it is on the segment the head is on, or one junction ahead of the head, only when nothing further away has room. That is checked for every food made in the runs above, and for 40,000 foods on 10,000 crowded domes. The check of each food is complete; the domes are a sample. No game played here has left an eel with no room for food at all. What a tick does then, which is to put the food on the eel and have the eel bite it at once, is played against the model from 300 domes made up to be that full, with eels in pieces that no game could have left.
+- **What the game chooses by chance**, the turn it takes at a junction in demo mode and the place of new food, comes from a random source the tests cannot set. Every choice that comes up is checked to be one the rules allow, but they are not gone through one by one, and a run cannot be repeated exactly. A tick that fails can: the failure prints the command that plays it again.
+
+Under the race detector these runs are far shorter, as said under [Dev container](#dev-container): the search stops after the first junction.
+
+### Not checked by anything here
+
+- **That the table matches the dome.** The tests show that the table is consistent with itself and has not changed. Whether the segments really meet where the table says, in which order the lights on a pipe are wired, and whether pushing the stick up sends the eel the way someone standing in the dome calls up, can only be checked at the dome, or by reading the listing against [docs/lights-diagram.png](./docs/lights-diagram.png).
+- **What Chromatik and Ableton do** with what they are sent. The tests compare the bytes that leave the game, and run neither program.
+- **The real joystick.** The decoders are checked against the tests' own reading of its reports, not against the device.
+- **Timing on the Pi**: whether the work of a tick fits in its 70 ms there, and how evenly the ticks come.
+- **A real Windows console.** The tests run on Windows too, but with no console window to type in. What the reader makes of the keys is tested the same on every system; the console itself is not.
+
 ## Design Notes
 
 Drawn below is a top-down diagram of the dome structure with segments labeled by lengths A, B, and C.

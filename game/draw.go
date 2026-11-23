@@ -22,6 +22,41 @@ const (
 	artnetSubUniByte = 14
 )
 
+// The layout above is checked when the game is built. A negative constant
+// cannot be converted to an unsigned number, so each line below stops the
+// build if what the comment over it says is not true, with "constant -1
+// overflows uint" (or by how much it is out) at that line. A wrong number
+// in the layout shows as a build that fails and not as a first frame that
+// is cut short or written past its buffer. None of the lines costs
+// anything when the game runs.
+const (
+	// The last universe has at least one pixel, and no more than a full
+	// one. With more pixels on the dome than seven universes carry, or so
+	// few that the last one is empty, this is what fails.
+	_ = uint(pixelsInLastUniv - 1)
+	_ = uint(pixelsPerFullUniv - pixelsInLastUniv)
+
+	// The six full universes and the last one together are the 49 x 22
+	// pixels of the dome, no more and no fewer. pixelsInLastUniv is worked
+	// out from the others, so this holds whatever they are; it is here for
+	// the day someone writes that number in by hand.
+	_ = uint(SegmentCount*SegmentLength - ((universeCount-1)*pixelsPerFullUniv + pixelsInLastUniv))
+	_ = uint((universeCount-1)*pixelsPerFullUniv + pixelsInLastUniv - SegmentCount*SegmentLength)
+
+	// The pixels of a full universe fit in the DMX payload, and the header
+	// with them in a packet buffer.
+	_ = uint(artnetDMXPayloadLen - pixelsPerFullUniv*RGB)
+	_ = uint(artnetPacketLen - (artnetHeaderLen + pixelsPerFullUniv*RGB))
+
+	// A packet buffer is the header and the whole DMX payload, no more and
+	// no fewer bytes. artnetPacketLen is worked out from the other two, so
+	// this too is for the day someone writes that number in by hand: a
+	// buffer that only had room for the pixels would send a payload
+	// shorter than the 512 bytes the header announces.
+	_ = uint(artnetPacketLen - (artnetHeaderLen + artnetDMXPayloadLen))
+	_ = uint(artnetHeaderLen + artnetDMXPayloadLen - artnetPacketLen)
+)
+
 // initDrawBuffers fills in the header of each universe's ArtDMX packet.
 // The header never changes after this, so Draw only rewrites pixel bytes.
 // The layout is the ArtDmx packet of the Art-Net specification.
