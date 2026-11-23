@@ -404,6 +404,11 @@ func TestInitChromatikWithoutListenSubnet(t *testing.T) {
 // 192.0.2.1 is a documentation address that no machine has; nothing is
 // sent, the route is only looked up. On a machine with no route to it,
 // such as one with only loopback, the test is skipped.
+//
+// With the port free, the test also shows that it can still be taken once
+// the game runs. On a machine where another program has the port already,
+// that one thing cannot be tried: the test checks the rest, says so and is
+// skipped.
 func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 	dest := net.IPv4(192, 0, 2, 1)
 	from, err := localAddrFor(dest)
@@ -417,12 +422,22 @@ func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 			name = "the Art-Net port taken"
 		}
 		t.Run(name, func(t *testing.T) {
+			// Whether the port is free is found out before the game
+			// starts, by taking it: only then can the test tell, further
+			// down, a port that the game keeps others from taking from
+			// one that another program on this machine has had all along,
+			// a Chromatik that is running for example.
+			var heldBefore error
 			if portTaken {
 				holder, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort})
 				if err != nil {
 					t.Skipf("cannot take port %d to stand in for another Art-Net program: %v", testArtNetPort, err)
 				}
 				defer holder.Close()
+			} else if probe, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort}); err != nil {
+				heldBefore = err
+			} else {
+				probe.Close()
 			}
 
 			var log bytes.Buffer
@@ -451,8 +466,15 @@ func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 			}
 
 			// With the game running, another program can still take the
-			// Art-Net port on the address the game sends from.
+			// Art-Net port on the address the game sends from. That can
+			// only be tried with a port that was free to begin with. If
+			// it was not, everything above has been checked all the same,
+			// with a real program holding the port.
 			if !portTaken {
+				if heldBefore != nil {
+					t.Skipf("port %d on %v was taken before the game started, by another program on this machine (a running Chromatik?), so whether the game leaves it free cannot be checked here: %v",
+						testArtNetPort, from, heldBefore)
+				}
 				later, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort})
 				if err != nil {
 					t.Errorf("with the game running, port %d cannot be taken: %v", testArtNetPort, err)
