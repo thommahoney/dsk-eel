@@ -283,9 +283,14 @@ func TestInitChromatikRejectsLoopbackListenWithRemoteDestination(t *testing.T) {
 // A loopback --listen subnet is fine when Chromatik is on this machine,
 // whichever of the machine's addresses it is given by: loopback, the
 // unspecified address or one of the machine's other addresses. Each of
-// them leaves the Art-Net port to Chromatik.
+// them leaves the Art-Net port to Chromatik. On Windows the unspecified
+// address is refused whatever --listen is: see
+// TestInitChromatikRefusesUnspecifiedDestination.
 func TestInitChromatikAcceptsLoopbackListenWithLocalDestination(t *testing.T) {
-	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2), net.IPv4zero}
+	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2)}
+	if unspecifiedReachesThisMachine {
+		dests = append(dests, net.IPv4zero)
+	}
 	for _, own := range ownAddresses(t) {
 		if own.To4() == nil {
 			continue
@@ -379,9 +384,12 @@ func TestInitChromatikIPv6Loopback(t *testing.T) {
 // game's own.
 func TestInitChromatikWithoutListenSubnet(t *testing.T) {
 	expectSameMachine(t, "", net.ParseIP("::ffff:127.0.0.1"), net.IPv4(127, 0, 0, 1))
-	// The unspecified address is this machine as well. Which address the
-	// system sends from to reach it is its own business.
-	expectSameMachine(t, "", net.IPv4zero, nil)
+	// The unspecified address is taken for this machine as well, except
+	// on Windows, where it is refused. Which address the system sends
+	// from to reach it is its own business.
+	if unspecifiedReachesThisMachine {
+		expectSameMachine(t, "", net.IPv4zero, nil)
+	}
 	if hasIPv6Loopback(t) {
 		expectSameMachine(t, "", net.IPv6loopback, net.IPv6loopback)
 	}
