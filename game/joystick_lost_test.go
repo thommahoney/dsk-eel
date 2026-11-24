@@ -41,15 +41,15 @@ func TestJoystickLostDuringGame(t *testing.T) {
 	g.HandleControllerState(input(controller.Dir_North, controller.Btn_None))
 	done := startGame(g)
 	sink.mustFrame()
-	if g.inDemoMode() {
+	if g.input.Load().inDemoMode() {
 		t.Fatal("in demo mode with a joystick and no --demo")
 	}
 
 	g.HandleControllerLost()
-	if got := g.controlDir.Load(); got != controller.Dir_Neutral {
+	if got := g.input.Load().direction(); got != controller.Dir_Neutral {
 		t.Errorf("held direction is %v after the joystick was lost, want Neutral", got)
 	}
-	if !g.inDemoMode() {
+	if !g.input.Load().inDemoMode() {
 		t.Error("not in demo mode after the joystick was lost")
 	}
 	wantSelfSteering(t, sink, done)
@@ -57,7 +57,7 @@ func TestJoystickLostDuringGame(t *testing.T) {
 	// A neutral stick is input, and out of demo mode it ends the game at
 	// the next junction.
 	g.HandleControllerState(input(controller.Dir_Neutral, controller.Btn_None))
-	if g.inDemoMode() {
+	if g.input.Load().inDemoMode() {
 		t.Error("still in demo mode after an input")
 	}
 	waitGameOver(t, done)
@@ -80,7 +80,7 @@ func TestJoystickLostBeforeFirstGame(t *testing.T) {
 
 	// The next game is an ordinary one: with the stick neutral it ends at
 	// the first junction.
-	if g.inDemoMode() {
+	if g.input.Load().inDemoMode() {
 		t.Error("in demo mode after the joystick was used")
 	}
 	waitGameOver(t, startGame(g))
@@ -183,16 +183,17 @@ func TestControllerLossReachesGame(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	t.Cleanup(c.Stop)
-	if g.inDemoMode() {
+	if g.input.Load().inDemoMode() {
 		t.Fatal("in demo mode with the joystick there and --demo not given")
 	}
 	send(first, north)
-	waitFor("north to reach the game", func() bool { return g.controlDir.Load() == controller.Dir_North })
+	waitFor("north to reach the game", func() bool { return g.input.Load().direction() == controller.Dir_North })
 
 	plug(nil)
 	close(first.unplug)
 	waitFor("demo mode and a neutral stick after the joystick is gone", func() bool {
-		return g.inDemoMode() && g.controlDir.Load() == controller.Dir_Neutral
+		in := g.input.Load()
+		return in.inDemoMode() && in.direction() == controller.Dir_Neutral
 	})
 
 	// Back, but nobody has touched it: still a demo, also if the joystick
@@ -212,13 +213,13 @@ func TestControllerLossReachesGame(t *testing.T) {
 	})
 	send(second, neutral)
 	send(second, neutral)
-	if !g.inDemoMode() {
+	if !g.input.Load().inDemoMode() {
 		t.Error("demo mode ended when the joystick came back, before any input")
 	}
 
 	send(second, east)
-	waitFor("east to reach the game", func() bool { return g.controlDir.Load() == controller.Dir_East })
-	if g.inDemoMode() {
+	waitFor("east to reach the game", func() bool { return g.input.Load().direction() == controller.Dir_East })
+	if g.input.Load().inDemoMode() {
 		t.Error("still in demo mode after an input from the joystick that came back")
 	}
 }

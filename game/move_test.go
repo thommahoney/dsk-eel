@@ -102,7 +102,7 @@ func TestMoveEatingTicks(t *testing.T) {
 func TestMoveHeldDirection(t *testing.T) {
 	g, sink := newTestGame(t)
 	place(g, 3, 17, 17, 1.0, 20, 12, 6)
-	g.controlDir.Store(controller.Dir_North)
+	setStick(g, controller.Dir_North)
 
 	if err := g.Eel.Move(); err != nil {
 		t.Fatalf("Move: %v", err)
@@ -127,7 +127,7 @@ func TestMoveHeldDirection(t *testing.T) {
 func TestMoveThroughJunction(t *testing.T) {
 	g, sink := newTestGame(t)
 	place(g, 0, 21, 7, 0.9, 20, 12, 6)
-	g.controlDir.Store(controller.Dir_North)
+	setStick(g, controller.Dir_North)
 
 	if err := g.Eel.Move(); err != nil {
 		t.Fatalf("Move: %v", err)
