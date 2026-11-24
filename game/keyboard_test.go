@@ -63,7 +63,7 @@ func TestOpenInput(t *testing.T) {
 					t.Fatal("the input was opened with no handler")
 				}
 				handler(input(controller.Dir_West, controller.Btn_None))
-				if got := g.controlDir.Load(); got != controller.Dir_West {
+				if got := g.input.Load().direction(); got != controller.Dir_West {
 					t.Errorf("a state given to the handler left the stick held %v, want West", got)
 				}
 			}
@@ -72,7 +72,7 @@ func TestOpenInput(t *testing.T) {
 					t.Fatal("the joystick was opened with nothing to call when it is lost")
 				}
 				lost()
-				if !g.inDemoMode() {
+				if !g.input.Load().inDemoMode() {
 					t.Error("the joystick's lost function did not put the game in demo mode")
 				}
 			}
@@ -102,7 +102,7 @@ func TestOpenInput(t *testing.T) {
 // between them.
 func TestKeyboardReachesGame(t *testing.T) {
 	g, sink := newOSCTestGame(t)
-	g.demoMode.Store(true)
+	setDemo(g, true)
 
 	r, w := io.Pipe()
 	quit := make(chan struct{})
@@ -123,10 +123,10 @@ func TestKeyboardReachesGame(t *testing.T) {
 	}
 
 	keys("\x1b[A") // up
-	if got := g.controlDir.Load(); got != controller.Dir_North {
+	if got := g.input.Load().direction(); got != controller.Dir_North {
 		t.Fatalf("after the up arrow the stick is held %v, want North", got)
 	}
-	if g.inDemoMode() {
+	if g.input.Load().inDemoMode() {
 		t.Error("still in demo mode after a key")
 	}
 	sink.expectNone("an arrow key")
@@ -144,12 +144,12 @@ func TestKeyboardReachesGame(t *testing.T) {
 	if g.paused.Load() {
 		t.Error("the white button did not resume the game")
 	}
-	if got := g.controlDir.Load(); got != controller.Dir_North {
+	if got := g.input.Load().direction(); got != controller.Dir_North {
 		t.Errorf("after the buttons the stick is held %v, want North still", got)
 	}
 
 	keys(" ") // centre the stick
-	if got := g.controlDir.Load(); got != controller.Dir_Neutral {
+	if got := g.input.Load().direction(); got != controller.Dir_Neutral {
 		t.Errorf("after space the stick is held %v, want Neutral", got)
 	}
 

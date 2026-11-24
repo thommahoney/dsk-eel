@@ -40,10 +40,15 @@ cd -- "$(dirname -- "$0")/.."
 name=dsk-eel-$(go env GOOS)-$(go env GOARCH)$(go env GOEXE)
 mkdir -p dist
 
-# -trimpath keeps this checkout's directory out of the binary, and -s -w
-# leave out the debugger's tables: the same source gives the same file.
+# The same source and version give the same file, whichever checkout it is
+# built in. -trimpath keeps the checkout's directory out of the binary, and
+# -s -w leave out the debugger's tables. -buildvcs=false keeps out the
+# commit, its time and whether the checkout had changes, which the go
+# command adds when it finds git and a repository. The dev image switches
+# that off for every build, but this script also runs without the image,
+# on macOS and Windows. A release's version already names the commit.
 echo "==> go build $name ($version)" >&2
-go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/$name" .
+go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$version" -o "dist/$name" .
 
 # macOS has shasum where Linux has sha256sum; they write the same line.
 if command -v sha256sum >/dev/null 2>&1; then

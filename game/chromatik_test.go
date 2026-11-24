@@ -252,7 +252,7 @@ func TestInitChromatikSendsToTheConfiguredDestination(t *testing.T) {
 }
 
 // A socket bound to loopback cannot send to another machine: every send
-// fails, and failed sends are not reported during play. So a loopback
+// fails, and during play that is only a warning in the log. So a loopback
 // --listen subnet (the default before --listen became optional) with a
 // --chromatik address that is not on this machine must be refused at
 // startup, with a message that names both flags. Broadcast and multicast
@@ -283,9 +283,14 @@ func TestInitChromatikRejectsLoopbackListenWithRemoteDestination(t *testing.T) {
 // A loopback --listen subnet is fine when Chromatik is on this machine,
 // whichever of the machine's addresses it is given by: loopback, the
 // unspecified address or one of the machine's other addresses. Each of
-// them leaves the Art-Net port to Chromatik.
+// them leaves the Art-Net port to Chromatik. On Windows the unspecified
+// address is refused whatever --listen is: see
+// TestInitChromatikRefusesUnspecifiedDestination.
 func TestInitChromatikAcceptsLoopbackListenWithLocalDestination(t *testing.T) {
-	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2), net.IPv4zero}
+	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2)}
+	if unspecifiedReachesThisMachine {
+		dests = append(dests, net.IPv4zero)
+	}
 	for _, own := range ownAddresses(t) {
 		if own.To4() == nil {
 			continue
@@ -324,9 +329,9 @@ func hasIPv6Loopback(t *testing.T) bool {
 }
 
 // A socket bound to an IPv4 address cannot send to an IPv6 destination, or
-// the other way round, and failed sends are not reported during play. So a
-// --chromatik address of one kind with a --listen subnet of the other must
-// be refused at startup, with a message that names both flags.
+// the other way round, and during play that is only a warning in the log.
+// So a --chromatik address of one kind with a --listen subnet of the other
+// must be refused at startup, with a message that names both flags.
 func TestInitChromatikRejectsMixedIPv4AndIPv6(t *testing.T) {
 	cases := []struct {
 		name, listenSubnet string
@@ -379,9 +384,12 @@ func TestInitChromatikIPv6Loopback(t *testing.T) {
 // game's own.
 func TestInitChromatikWithoutListenSubnet(t *testing.T) {
 	expectSameMachine(t, "", net.ParseIP("::ffff:127.0.0.1"), net.IPv4(127, 0, 0, 1))
-	// The unspecified address is this machine as well. Which address the
-	// system sends from to reach it is its own business.
-	expectSameMachine(t, "", net.IPv4zero, nil)
+	// The unspecified address is taken for this machine as well, except
+	// on Windows, where it is refused. Which address the system sends
+	// from to reach it is its own business.
+	if unspecifiedReachesThisMachine {
+		expectSameMachine(t, "", net.IPv4zero, nil)
+	}
 	if hasIPv6Loopback(t) {
 		expectSameMachine(t, "", net.IPv6loopback, net.IPv6loopback)
 	}

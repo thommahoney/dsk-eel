@@ -57,7 +57,7 @@ func lapEel(g *Game, n int) (reset func()) {
 		body[i] = &Point{}
 	}
 	g.Eel = &Eel{Body: body, Game: g, Segment: seg, TravelDir: Greater}
-	g.controlDir.Store(controller.Dir_Neutral)
+	setStick(g, controller.Dir_Neutral)
 	g.Food = &Food{Body: line(g.Segments[1], 12, 6), Game: g, Fresh: true}
 	g.Brightness = 0.75
 

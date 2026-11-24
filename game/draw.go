@@ -54,15 +54,23 @@ func (g *Game) resetFrame() {
 	}
 }
 
-// Draw sends the current g.frame as 7 ArtDMX packets. It does not
-// allocate: it writes the pixels into the per-universe buffers and hands
-// each buffer to ArtNetSend, which has written it to the socket by the
-// time it returns.
+// Draw sends the current g.frame as 7 ArtDMX packets. While the sends
+// work it does not allocate: it writes the pixels into the per-universe
+// buffers and hands each buffer to ArtNetSend, which has written it to the
+// socket by the time it returns.
 //
 // Payload bytes past a universe's last pixel are never written, so they
 // keep the zero they start with: the last 2 bytes of universes 0..5 and
 // everything after pixel 58 in universe 6.
+//
+// A send that fails stops neither the frame nor the game: the universes
+// after it are still sent, and the next frame is tried like any other.
+// A frame counts as failed if even one of its seven packets could not be
+// sent, because part of the dome then did not get it, and as sent only if
+// all seven were. artnetFrameResult says in the log when that changes.
 func (g *Game) Draw() {
+	// The error of the first packet of this frame that could not be sent.
+	var sendErr error
 	for univ := range universeCount {
 		buf := &g.artnetBufs[univ]
 
@@ -79,6 +87,40 @@ func (g *Game) Draw() {
 			buf[off+2] = c[2]
 		}
 
-		_, _ = g.Chromatik.ArtNetSend(buf[:])
+		if _, err := g.Chromatik.ArtNetSend(buf[:]); err != nil && sendErr == nil {
+			sendErr = err
+		}
 	}
+
+	// Nearly every frame is sent after a frame that was sent, and then
+	// there is nothing to say or to remember.
+	if sendErr != nil || g.artnetFailedFrames != 0 {
+		g.artnetFrameResult(sendErr)
+	}
+}
+
+// artnetFrameResult takes the result of a frame: the error that makes it
+// a failed one, or nil for the first frame sent after a failed one. Draw
+// does not call it for any other frame. It logs when frames stop getting
+// out and when they get out again: once each, and nothing for the failed
+// frames in between, however many there are. A line for each would be 14
+// lines a second.
+//
+// Both lines are warnings, the second one too although nothing is wrong
+// any more: warnings are what the log shows without -v, and a log that
+// says frames stopped has to say when they came back.
+//
+// It never opens the socket again. The socket is bound to the address this
+// machine had at the start, so sends that fail because that address is gone
+// work again when the same address is back, and not with a different one.
+func (g *Game) artnetFrameResult(err error) {
+	if err != nil {
+		if g.artnetFailedFrames == 0 {
+			g.Config.Logger.Warn("cannot send Art-Net frames, will keep trying", "error", err)
+		}
+		g.artnetFailedFrames++
+		return
+	}
+	g.Config.Logger.Warn("sending Art-Net frames again", "failed_frames", g.artnetFailedFrames)
+	g.artnetFailedFrames = 0
 }
