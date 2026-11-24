@@ -108,10 +108,16 @@ func (o *opener) open() (Device, error) {
 
 // plugIn makes the next open succeed with a new device.
 func (o *opener) plugIn() *fakeDevice {
+	d := newFakeDevice()
+	o.plug(d)
+	return d
+}
+
+// plug makes the next open succeed with d.
+func (o *opener) plug(d *fakeDevice) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.next = newFakeDevice()
-	return o.next
+	o.next = d
 }
 
 func (o *opener) count() int {
@@ -234,7 +240,9 @@ func TestStatesReachHandler(t *testing.T) {
 	device := newFakeDevice()
 	r := start(t, device)
 
-	if n := r.log.count(slog.LevelInfo, "connected to joystick"); n != 1 {
+	// The connection is a warning, so that the default log level shows
+	// which device was opened.
+	if n := r.log.count(slog.LevelWarn, "connected to joystick"); n != 1 {
 		t.Errorf("%d connection messages logged, want 1", n)
 	}
 
@@ -293,9 +301,6 @@ func TestReadErrorReconnects(t *testing.T) {
 	waitFor(t, "the reconnect to be logged", func() bool {
 		return r.log.count(slog.LevelWarn, "reconnected to joystick") == 1
 	})
-	if n := r.log.count(slog.LevelInfo, "connected to joystick"); n != 1 {
-		t.Errorf("%d info messages about a connection, want 1, for the first one", n)
-	}
 
 	// The stick is still held north. To the controller that is a change,
 	// because a lost joystick counts as let go.
@@ -393,8 +398,9 @@ func TestDeviceThatNeverReads(t *testing.T) {
 	if returns > losses || returns < losses-1 {
 		t.Errorf("%d reconnect warnings for %d loss warnings, want as many, or one fewer", returns, losses)
 	}
-	if all := log.count(slog.LevelWarn, ""); all != losses+returns {
-		t.Errorf("%d warnings in all, want only the %d losses and %d returns", all, losses, returns)
+	// The first connection is a warning as well.
+	if all := log.count(slog.LevelWarn, ""); all != 1+losses+returns {
+		t.Errorf("%d warnings in all, want only the first connection, the %d losses and %d returns", all, losses, returns)
 	}
 }
 

@@ -52,9 +52,9 @@ func TestMoveAllocationsAtJunction(t *testing.T) {
 	for _, demo := range []bool{false, true} {
 		g := newLoopbackGame(t)
 		place(g, 0, 21, 7, 0.75, 5, 12, 6)
-		g.demoMode.Store(demo)
+		setDemo(g, demo)
 		if !demo {
-			g.controlDir.Store(controller.Dir_North)
+			setStick(g, controller.Dir_North)
 		}
 		seg := g.Segments[0]
 
@@ -129,7 +129,7 @@ func checkGraphIntact(t *testing.T, g *Game) {
 	fresh := InitSegments()
 	for i, s := range g.Segments {
 		want := fresh[i]
-		if s.Label != want.Label || s.Offset != want.Offset || s.Length != want.Length || s.Color != want.Color {
+		if s.Label != want.Label || s.Offset != want.Offset {
 			t.Errorf("segment %d is %s at offset %d, want %s at offset %d", i, s.Label, s.Offset, want.Label, want.Offset)
 		}
 		wantHops := hops(want)
@@ -172,7 +172,7 @@ func TestSegmentGraphSurvivesPlay(t *testing.T) {
 	// Nothing reads the frames in this test. With the socket closed the
 	// seven sends of a tick fail at once, which makes the run much shorter.
 	g.Chromatik.ArtNetConnection.Close()
-	g.demoMode.Store(true)
+	setDemo(g, true)
 
 	ticks := 100000
 	if raceDetector {
@@ -189,9 +189,9 @@ func TestSegmentGraphSurvivesPlay(t *testing.T) {
 		eel := g.Eel
 		switch rand.N(40) {
 		case 0:
-			g.controlDir.Store(cardinalTurns[rand.N(len(cardinalTurns))])
+			setStick(g, cardinalTurns[rand.N(len(cardinalTurns))])
 		case 1:
-			g.controlDir.Store(controller.Dir_Neutral)
+			setStick(g, controller.Dir_Neutral)
 		}
 		if rand.N(10) == 0 && len(eel.Body)+eel.Growth < 400 {
 			eel.Growth += 1 + rand.N(5)
@@ -226,7 +226,8 @@ func referenceMove(e *Eel, demoTurn controller.Direction, newFood func() *Food) 
 	head := e.Head()
 	travelDir := e.TravelDir
 
-	controlDir := e.Game.controlDir.Load()
+	in := e.Game.input.Load()
+	controlDir := in.direction()
 
 	var nextPoint *Point
 	nextHop := head.Segment.NextHop(travelDir, controlDir)
@@ -235,7 +236,7 @@ func referenceMove(e *Eel, demoTurn controller.Direction, newFood func() *Food) 
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
 
 		var cDir controller.Direction
-		if controlDir == controller.Dir_Neutral && e.Game.demoMode.Load() {
+		if controlDir == controller.Dir_Neutral && in.demo() {
 			// 1. The original picked one of the four turns at random.
 			cDir = demoTurn
 		} else {
@@ -395,7 +396,7 @@ func (m *mirroredPlay) start(eel *Eel, food *Food, demo bool, stick, feedEvery, 
 
 	eel.Game = g
 	g.Eel = eel
-	g.demoMode.Store(demo)
+	setDemo(g, demo)
 	if food == nil {
 		food = NewFood(g)
 	}
@@ -408,8 +409,8 @@ func (m *mirroredPlay) start(eel *Eel, food *Food, demo bool, stick, feedEvery, 
 		TravelDir: eel.TravelDir,
 	}
 	ref.Food = &Food{Body: mirrorPoints(ref, food.Body, 0), Game: ref, Fresh: food.Fresh}
-	ref.demoMode.Store(demo)
-	ref.controlDir.Store(g.controlDir.Load())
+	setDemo(ref, demo)
+	setStick(ref, g.input.Load().direction())
 
 	g.Brightness, m.brightnessStep = 1.0, -0.05
 	m.stick, m.feedEvery, m.ticksLeft = stick, feedEvery, ticks
@@ -439,7 +440,7 @@ func (m *mirroredPlay) walked(n, growth int) *Eel {
 func (m *mirroredPlay) startGame(n int) {
 	g := m.g
 	// Every game starts with the stick let go.
-	g.controlDir.Store(controller.Dir_Neutral)
+	setStick(g, controller.Dir_Neutral)
 	straight := func(seg, head int) *Eel {
 		s := g.Segments[seg]
 		body := append(make([]*Point, 0, initialBodyCap), line(s, head, head-6)...)
@@ -454,7 +455,7 @@ func (m *mirroredPlay) startGame(n int) {
 	case 1:
 		// A player holding the stick north takes the eel through its
 		// first junction.
-		g.controlDir.Store(controller.Dir_North)
+		setStick(g, controller.Dir_North)
 		m.start(NewEel(g), nil, false, stickNeutral, 0, 30)
 	case 2:
 		// A player who does not touch the stick dies at the first
@@ -508,17 +509,17 @@ func (m *mirroredPlay) tick() (over bool) {
 	switch m.stick {
 	case stickNudged:
 		if rand.N(30) == 0 {
-			g.controlDir.Store(allStickPositions[rand.N(len(allStickPositions))])
+			setStick(g, allStickPositions[rand.N(len(allStickPositions))])
 		}
 	case stickBusy:
 		if rand.N(4) == 0 {
-			g.controlDir.Store(cardinalTurns[rand.N(len(cardinalTurns))])
+			setStick(g, cardinalTurns[rand.N(len(cardinalTurns))])
 			if rand.N(10) == 0 {
-				g.controlDir.Store(allStickPositions[rand.N(len(allStickPositions))])
+				setStick(g, allStickPositions[rand.N(len(allStickPositions))])
 			}
 		}
 	}
-	ref.controlDir.Store(g.controlDir.Load())
+	setStick(ref, g.input.Load().direction())
 	if m.feedEvery > 0 && rand.N(m.feedEvery) == 0 && len(eel.Body)+eel.Growth < 550 {
 		extra := 1 + rand.N(12)
 		eel.Growth += extra
@@ -534,7 +535,8 @@ func (m *mirroredPlay) tick() (over bool) {
 	refHead := refEel.Head()
 	atJunction := (refHead.Position == 0 && refEel.TravelDir == Lesser) ||
 		(refHead.Position == testSegmentLength-1 && refEel.TravelDir == Greater)
-	demoPicks := atJunction && ref.demoMode.Load() && ref.controlDir.Load() == controller.Dir_Neutral
+	refInput := ref.input.Load()
+	demoPicks := atJunction && refInput.demo() && refInput.direction() == controller.Dir_Neutral
 	lengthBefore, growing := len(eel.Body), eel.Growth > 0
 	foodBefore, wasFresh := g.Food, g.Food.Fresh
 

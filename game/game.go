@@ -1,7 +1,9 @@
 package game
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
@@ -37,18 +39,15 @@ type Game struct {
 	// the Game and not to one Eel, so what the player is doing carries over
 	// from one game to the next.
 	//
-	// controlDir is the direction the stick is held in right now.
-	// demoMode is whether this game is a demo, in which the eel steers
-	// itself at junctions; Run sets it from Config.DemoMode for every game
-	// and the first input clears it.
-	// joystickLost is set when the joystick is lost, which makes every
-	// game a demo whatever the configuration says. It is cleared by the
-	// first input from a joystick that has come back, not by its return.
+	// input is the direction the stick is held in right now, whether this
+	// game is a demo, in which the eel steers itself at junctions, and
+	// whether the joystick is lost, which makes every game a demo. Run
+	// writes it too: it sets demo mode from Config.DemoMode for every game.
+	// The three are one atomic word, so that a tick sees them as they were
+	// together at one moment; see inputState.
 	// paused stops Mover from advancing the game.
-	controlDir   heldDirection
-	demoMode     atomic.Bool
-	joystickLost atomic.Bool
-	paused       atomic.Bool
+	input  inputState
+	paused atomic.Bool
 
 	// buttonIndex alternates between the two faders of a colored button on
 	// each press. Only HandleButtonPress uses it, on the joystick goroutine.
@@ -76,6 +75,14 @@ type Game struct {
 	frame      [SegmentCount * SegmentLength]Color
 	frameSet   [SegmentCount * SegmentLength]bool
 	artnetBufs [universeCount][artnetPacketLen]byte
+
+	// artnetFailedFrames is render state as well: only Draw touches it.
+	// It is how many frames in a row could not be sent, and zero while
+	// frames get out; with it Draw logs the start and the end of a failure
+	// and not every frame of it. It belongs to the Game and not to one
+	// Eel, so a failure that lasts from one game into the next is still
+	// one failure.
+	artnetFailedFrames int
 
 	// brightnessIncrement is the step Mover applies to Brightness each tick.
 	brightnessIncrement float64
@@ -142,8 +149,7 @@ func (g *Game) Run() {
 	g.Brightness = 1.0
 	g.brightnessIncrement = -0.05
 
-	// reset demo mode to configured value
-	g.demoMode.Store(g.Config.DemoMode)
+	g.resetDemoMode()
 
 	var wg sync.WaitGroup
 
@@ -153,6 +159,16 @@ func (g *Game) Run() {
 	go g.Mover(&wg)
 
 	wg.Wait()
+}
+
+// resetDemoMode sets demo mode to the configured value, for a new game.
+// The stick and the lost joystick stay as they are, and the joystick
+// goroutine can write either at this very moment, so this is an Update: a
+// store of the state as it was loaded, changed, could undo an input or a
+// loss.
+func (g *Game) resetDemoMode() {
+	demo := g.Config.DemoMode
+	g.input.Update(func(in inputSnapshot) inputSnapshot { return in.withDemo(demo) })
 }
 
 func (g *Game) GameOver() {
@@ -235,25 +251,21 @@ func (g *Game) GameOverAnimation(wg *sync.WaitGroup) {
 	}
 }
 
-// inDemoMode reports whether the eel steers itself at junctions while the
-// stick is neutral: in a demo game, and in any game from the loss of the
-// joystick until the first input after it is back.
-func (g *Game) inDemoMode() bool {
-	return g.demoMode.Load() || g.joystickLost.Load()
-}
-
 // HandleControllerLost is called by the controller, on its goroutine, when
 // the joystick stops answering. The game carries on in demo mode with
 // nothing held, until the first input from a joystick that has come back;
 // that input ends demo mode the way any first input does. Pause is left as
 // it is.
 func (g *Game) HandleControllerLost() {
-	// The flag goes first, so that a tick never sees the stick let go
-	// without also seeing demo mode, which would end the game at a junction.
-	if !g.joystickLost.Swap(true) {
+	// The stick let go and the joystick lost go into the input state in
+	// one step, so no tick sees the stick let go without the eel steering
+	// itself, which would end the game at a junction. Whether the game is
+	// a demo is kept, and Run can write that at this very moment from its
+	// own goroutine, so this is an Update and not a Swap.
+	was := g.input.Update(inputSnapshot.withJoystickLost)
+	if !was.joystickLost() {
 		g.Config.Logger.Warn("joystick lost: running in demo mode until it is back and someone uses it")
 	}
-	g.controlDir.Store(controller.Dir_Neutral)
 	g.prevButtons = controller.Btn_None
 }
 
@@ -261,18 +273,23 @@ func (g *Game) HandleControllerLost() {
 // on its own goroutine, one call at a time, whenever the state changes, and
 // that can be at any moment: before the first game, in the middle of a tick
 // or between games. It only touches the input state on Game, which the game
-// loop reads with atomic loads, and never the eel or the frame.
+// loop reads with atomic loads (the stick, demo mode and the lost joystick
+// in one load a tick, and pause in another), and never the eel or the
+// frame.
 func (g *Game) HandleControllerState(state controller.ControllerState) {
-	g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
+	// The names of the stick position and of the buttons are only put
+	// together when the line is wanted, which without -v it is not.
+	if g.Config.Logger.Enabled(context.Background(), slog.LevelInfo) {
+		g.Config.Logger.Info("HandleControllerState", "joystick", state.Direction.String(), "buttons", state.ButtonStatus.String())
+	}
 
-	// The direction goes first, so that a tick never sees demo mode ended
-	// before it sees the direction that ended it: with the stick still
-	// neutral, that would end the game at a junction.
-	g.controlDir.Store(state.Direction)
-
-	wasLost := g.joystickLost.Swap(false)
-	wasDemo := g.demoMode.Swap(false)
-	if wasLost || wasDemo {
+	// The direction, and the end of demo mode and of a joystick loss, go
+	// into the input state in one step, so no tick sees demo mode ended
+	// without the direction that ended it: with the stick still neutral,
+	// that would end the game at a junction. Nothing of the old state is
+	// kept, so a Swap is enough, whatever Run is writing at this moment.
+	was := g.input.Swap(stickHeld(state.Direction))
+	if was.inDemoMode() {
 		// we have a contender!
 		g.Config.Logger.Info("HandleControllerState setting DemoMode = false")
 	}
@@ -302,9 +319,9 @@ func (g *Game) HandleControllerState(state controller.ControllerState) {
 	// pressed is the one in effect.
 	//
 	// Buttons that go down in the same state are a press of one of them.
-	// Taken together they match no fader, so every channel would go to 0
-	// and stay there, with nothing showing, until the next press. A bit
-	// that is none of the five buttons is not a press at all.
+	// Taken together they are no button and match no fader, and the press
+	// would be lost. A bit that is none of the five buttons is not a press
+	// at all.
 	g.HandleButtonPress(firstButton(wentDown))
 }
 
@@ -329,16 +346,14 @@ func firstButton(buttons controller.ButtonStatus) controller.ButtonStatus {
 	return controller.Btn_None
 }
 
-// HandleButtonPress runs the action of a button. HandleControllerState
-// always passes it a single button, so what it does with several at once
-// is only reached by calling it directly.
+// HandleButtonPress runs the action of one button. HandleControllerState
+// passes it one of the five buttons, or no button for a bit that is none
+// of them (see firstButton). Anything that is not one button by itself,
+// no button or several at once, is not a press and does nothing.
 func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
-	if status == controller.Btn_None {
-		// No-Op
+	if _, oneButton := buttonToOSCAddress[status]; !oneButton {
 		return
 	}
-
-	// @todo add back an easter egg for multiple buttons pressed
 
 	g.buttonIndex += 1
 	if g.buttonIndex >= 2 {
@@ -374,6 +389,7 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 		g.Pause()
 	}
 
+	// Only a color gets this far.
 	var swatch int
 	switch status {
 	case controller.Btn_Red:
@@ -384,9 +400,6 @@ func (g *Game) HandleButtonPress(status controller.ButtonStatus) {
 		swatch = 3
 	case controller.Btn_Yellow:
 		swatch = 4
-	default:
-		// multiple buttons pressed?
-		swatch = 1
 	}
 
 	err := g.Chromatik.OscSend_swatch(swatch)

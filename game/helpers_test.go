@@ -178,9 +178,21 @@ func place(g *Game, seg, headPos, n int, brightness float64, foodSeg, foodFrom, 
 		Segment:   s,
 		TravelDir: Greater,
 	}
-	g.controlDir.Store(controller.Dir_Neutral)
+	setStick(g, controller.Dir_Neutral)
 	g.Food = &Food{Body: line(g.Segments[foodSeg], foodFrom, foodTo), Game: g, Fresh: true}
 	g.Brightness = brightness
+}
+
+// setStick holds the stick in dir without that counting as an input: demo
+// mode and a lost joystick stay as they are.
+func setStick(g *Game, dir controller.Direction) {
+	g.input.Update(func(in inputSnapshot) inputSnapshot { return in.withDirection(dir) })
+}
+
+// setDemo makes the game a demo or not, as Run does from the configuration.
+// The stick and a lost joystick stay as they are.
+func setDemo(g *Game, demo bool) {
+	g.input.Update(func(in inputSnapshot) inputSnapshot { return in.withDemo(demo) })
 }
 
 // skipWhereSendsAllocate skips a test that counts allocations on a path

@@ -110,7 +110,6 @@ func NewFood(g *Game) *Food {
 		Body:  newBodyAt(segment, start, GrowthIncrement),
 		Game:  g,
 		Fresh: true,
-		Hue:   rand.Float64() * 360.0,
 	}
 }
 
@@ -213,13 +212,22 @@ func (e *Eel) Eat() {
 	e.Game.Ableton.FireClip(6, rand.Int32N(8))
 }
 
+// Move advances the game by one tick.
+//
+// The joystick goroutine can change the input state at any moment. Move
+// loads it here, once, and move reads nothing of it but this snapshot, so
+// the whole tick steers and signals by the stick, demo mode and joystick
+// loss of one moment, never by the stick of one moment and the demo mode
+// of another.
 func (e *Eel) Move() error {
+	return e.move(e.Game.input.Load())
+}
+
+// move is a tick played by the input state in.
+func (e *Eel) move(in inputSnapshot) error {
 	head := e.Head()
 	travelDir := e.TravelDir
-
-	// The joystick goroutine can change the direction at any moment. Read
-	// it once, so the whole tick steers and signals by the same direction.
-	controlDir := e.Game.controlDir.Load()
+	controlDir := in.direction()
 
 	// next is where the head goes on this tick.
 	next := *head
@@ -229,7 +237,7 @@ func (e *Eel) Move() error {
 		(head.Position == SegmentLength-1 && travelDir == Greater) {
 
 		var cDir controller.Direction
-		if controlDir == controller.Dir_Neutral && e.Game.inDemoMode() {
+		if controlDir == controller.Dir_Neutral && in.inDemoMode() {
 			switch rand.N(4) {
 			case 0:
 				cDir = controller.Dir_North
@@ -426,7 +434,6 @@ type Food struct {
 	Body  []*Point
 	Fresh bool
 	Game  *Game
-	Hue   float64
 }
 
 // draw paints the given food points into the frame, over whatever is
@@ -465,10 +472,7 @@ type Hop struct {
 // Represents a physical dome pipe segment and the lights on it
 type Segment struct {
 	Label  string
-	Length int
 	Offset int
-
-	Color Color
 
 	// [Greater|Lesser][Up|Down|Left|Right] hops
 	// are akin to traversing a graph or a tree structure
@@ -558,6 +562,6 @@ type Point struct {
 	Segment *Segment
 
 	// LED closest to the ground cable is Position 0
-	// LED furthest from the ground cable is Position (Segment.Length - 1)
+	// LED furthest from the ground cable is Position (SegmentLength - 1)
 	Position int
 }

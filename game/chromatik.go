@@ -17,11 +17,25 @@ type Chromatik struct {
 }
 
 func InitChromatik(c *config.Config) (*Chromatik, error) {
+	return initChromatik(c, unspecifiedReachesThisMachine)
+}
+
+// initChromatik is InitChromatik for a system on which what is sent to the
+// unspecified address arrives on this machine or does not, as
+// unspecifiedReaches says. The system's own answer is the constant
+// unspecifiedReachesThisMachine; a test can give the other one.
+func initChromatik(c *config.Config, unspecifiedReaches bool) (*Chromatik, error) {
 	// To16 is nil for anything that is not a 4 or 16 byte address. Sends
-	// to such a destination would all fail, and Draw does not report
-	// failed sends, so it is refused here.
+	// to such a destination would all fail, and Draw only logs a warning
+	// and plays on, so it is refused here.
 	if c.ArtNetDest.To16() == nil {
 		return nil, fmt.Errorf("invalid Chromatik address %q (set with --chromatik)", c.ArtNetDest.String())
+	}
+	// So is the unspecified address where nothing can be sent to it. That
+	// is asked first: the choice of a local address below would not
+	// notice, because connecting a socket to the address works there.
+	if err := unspecifiedDestError("Chromatik address", "--chromatik", c.ArtNetDest, unspecifiedReaches); err != nil {
+		return nil, err
 	}
 
 	// The local address the Art-Net socket is bound to decides which
@@ -44,8 +58,8 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 			return nil, err
 		}
 		// A socket bound to a loopback address can only send to this
-		// machine. To anywhere else every send would fail, and Draw does
-		// not report failed sends, so that pairing is refused here.
+		// machine. To anywhere else every send would fail, and Draw only
+		// logs a warning and plays on, so that pairing is refused here.
 		if ip.IsLoopback() && !onThisMachine(c.ArtNetDest, addrs) {
 			return nil, fmt.Errorf("the local address %s (the one in the listen subnet %s, set with --listen) is a loopback address and cannot send to the Chromatik address %s (set with --chromatik), which is not on this machine; leave --listen out, or give the subnet of the network Chromatik is on",
 				ip, c.ListenSubnet, c.ArtNetDest)
@@ -59,8 +73,8 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 	}
 
 	// A socket bound to an IPv4 address cannot send to an IPv6 destination,
-	// nor the other way round. Every send would fail, and Draw does not
-	// report failed sends, so a mix is refused here as well. It can only
+	// nor the other way round. Every send would fail, and Draw only logs
+	// a warning and plays on, so a mix is refused here as well. It can only
 	// happen with --listen: an address chosen from the route to the
 	// destination is of the destination's kind.
 	if (ip.To4() == nil) != (c.ArtNetDest.To4() == nil) {
@@ -96,8 +110,36 @@ func InitChromatik(c *config.Config) (*Chromatik, error) {
 		conn.Close()
 		return nil, fmt.Errorf("invalid OSC destination %q (--osc-dest, --osc-port): %s", oscDest, err)
 	}
+	// --osc-dest can name the unspecified address too, as an address or
+	// as a host name that stands for it, so the address the client sends
+	// to is what is asked about. Without --osc-dest it is the Chromatik
+	// address, which got this far.
+	if err := unspecifiedDestError("OSC address", "--osc-dest", oscClient.dest.Addr().AsSlice(), unspecifiedReaches); err != nil {
+		conn.Close()
+		oscClient.Close()
+		return nil, err
+	}
 
 	return &Chromatik{ArtNetConnection: conn, ArtNetNode: node, OscClient: oscClient}, nil
+}
+
+// unspecifiedDestError returns the error for a destination that is the
+// unspecified address, 0.0.0.0 or ::, on a system where nothing can be
+// sent to it: every send would fail, and Draw only logs a warning and
+// plays on. On a system where what is sent there arrives on this machine,
+// which unspecifiedReaches says, and for every other destination it
+// returns nil. what and flag name the destination in the message, which
+// says what to give for a Chromatik on this machine.
+func unspecifiedDestError(what, flag string, dest net.IP, unspecifiedReaches bool) error {
+	if unspecifiedReaches || !dest.IsUnspecified() {
+		return nil
+	}
+	thisMachine := "127.0.0.1"
+	if dest.To4() == nil {
+		thisMachine = "::1"
+	}
+	return fmt.Errorf("the %s %s (set with %s) is the unspecified address, and on this system nothing can be sent to it; for a Chromatik on this machine give %s %s",
+		what, dest, flag, flag, thisMachine)
 }
 
 // localAddrFor returns the local address this machine sends from to reach
@@ -114,9 +156,10 @@ func localAddrFor(dest net.IP) (net.IP, error) {
 }
 
 // onThisMachine reports whether a datagram sent to dest stays on this
-// machine: dest is a loopback address, the unspecified address (which the
-// system treats as this machine) or one of addrs, the machine's own
-// addresses as net.InterfaceAddrs returns them.
+// machine: dest is a loopback address, the unspecified address (on a
+// system where that cannot be sent to, InitChromatik has refused it before
+// it asks here) or one of addrs, the machine's own addresses as
+// net.InterfaceAddrs returns them.
 func onThisMachine(dest net.IP, addrs []net.Addr) bool {
 	if dest.IsLoopback() || dest.IsUnspecified() {
 		return true
@@ -166,7 +209,6 @@ var buttonToOSCAddress = map[controller.ButtonStatus][]string{
 	controller.Btn_Blue:   {"/lx/mixer/channel/5/fader", "/lx/mixer/channel/6/fader"},
 	controller.Btn_Yellow: {"/lx/mixer/channel/7/fader", "/lx/mixer/channel/8/fader"},
 	controller.Btn_White:  {"/lx/mixer/channel/9/fader"},
-	// controller.Btn_None:   {},
 }
 
 func (c *Chromatik) OscSend(address string, value float32) error {
