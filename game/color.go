@@ -20,7 +20,17 @@ func RandomColor() Color {
 }
 
 // hsvToRGB converts hue (0-360), saturation (0-1), value (0-1) to RGB (0-255).
+//
+// A value below 0 is taken as 0 and one above 1 as 1. The game never asks
+// for one: the breathing brightness stays between MinBrightness and
+// MaxBrightness, and the dimmest turn-signal pixel is 0.4 below it. But the
+// bytes below are made by converting a float, and what that gives for a
+// number that is not from 0 to 255 is up to the compiler. On arm64 a value
+// of 1.05 came out as level 11, nearly black, where full brightness was
+// meant. With the limits a brightness that strays shows as the nearest
+// level there is.
 func hsvToRGB(hue, saturation, value float64) Color {
+	value = min(max(value, 0), 1)
 	chroma := value * saturation
 	x := chroma * (1 - math.Abs(math.Mod(hue/60, 2)-1))
 	m := value - chroma

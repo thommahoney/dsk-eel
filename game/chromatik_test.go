@@ -252,7 +252,7 @@ func TestInitChromatikSendsToTheConfiguredDestination(t *testing.T) {
 }
 
 // A socket bound to loopback cannot send to another machine: every send
-// fails, and failed sends are not reported during play. So a loopback
+// fails, and during play that is only a warning in the log. So a loopback
 // --listen subnet (the default before --listen became optional) with a
 // --chromatik address that is not on this machine must be refused at
 // startup, with a message that names both flags. Broadcast and multicast
@@ -283,9 +283,14 @@ func TestInitChromatikRejectsLoopbackListenWithRemoteDestination(t *testing.T) {
 // A loopback --listen subnet is fine when Chromatik is on this machine,
 // whichever of the machine's addresses it is given by: loopback, the
 // unspecified address or one of the machine's other addresses. Each of
-// them leaves the Art-Net port to Chromatik.
+// them leaves the Art-Net port to Chromatik. On Windows the unspecified
+// address is refused whatever --listen is: see
+// TestInitChromatikRefusesUnspecifiedDestination.
 func TestInitChromatikAcceptsLoopbackListenWithLocalDestination(t *testing.T) {
-	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2), net.IPv4zero}
+	dests := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 2)}
+	if unspecifiedReachesThisMachine {
+		dests = append(dests, net.IPv4zero)
+	}
 	for _, own := range ownAddresses(t) {
 		if own.To4() == nil {
 			continue
@@ -324,9 +329,9 @@ func hasIPv6Loopback(t *testing.T) bool {
 }
 
 // A socket bound to an IPv4 address cannot send to an IPv6 destination, or
-// the other way round, and failed sends are not reported during play. So a
-// --chromatik address of one kind with a --listen subnet of the other must
-// be refused at startup, with a message that names both flags.
+// the other way round, and during play that is only a warning in the log.
+// So a --chromatik address of one kind with a --listen subnet of the other
+// must be refused at startup, with a message that names both flags.
 func TestInitChromatikRejectsMixedIPv4AndIPv6(t *testing.T) {
 	cases := []struct {
 		name, listenSubnet string
@@ -379,9 +384,12 @@ func TestInitChromatikIPv6Loopback(t *testing.T) {
 // game's own.
 func TestInitChromatikWithoutListenSubnet(t *testing.T) {
 	expectSameMachine(t, "", net.ParseIP("::ffff:127.0.0.1"), net.IPv4(127, 0, 0, 1))
-	// The unspecified address is this machine as well. Which address the
-	// system sends from to reach it is its own business.
-	expectSameMachine(t, "", net.IPv4zero, nil)
+	// The unspecified address is taken for this machine as well, except
+	// on Windows, where it is refused. Which address the system sends
+	// from to reach it is its own business.
+	if unspecifiedReachesThisMachine {
+		expectSameMachine(t, "", net.IPv4zero, nil)
+	}
 	if hasIPv6Loopback(t) {
 		expectSameMachine(t, "", net.IPv6loopback, net.IPv6loopback)
 	}
@@ -396,6 +404,11 @@ func TestInitChromatikWithoutListenSubnet(t *testing.T) {
 // 192.0.2.1 is a documentation address that no machine has; nothing is
 // sent, the route is only looked up. On a machine with no route to it,
 // such as one with only loopback, the test is skipped.
+//
+// With the port free, the test also shows that it can still be taken once
+// the game runs. On a machine where another program has the port already,
+// that one thing cannot be tried: the test checks the rest, says so and is
+// skipped.
 func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 	dest := net.IPv4(192, 0, 2, 1)
 	from, err := localAddrFor(dest)
@@ -409,12 +422,22 @@ func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 			name = "the Art-Net port taken"
 		}
 		t.Run(name, func(t *testing.T) {
+			// Whether the port is free is found out before the game
+			// starts, by taking it: only then can the test tell, further
+			// down, a port that the game keeps others from taking from
+			// one that another program on this machine has had all along,
+			// a Chromatik that is running for example.
+			var heldBefore error
 			if portTaken {
 				holder, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort})
 				if err != nil {
 					t.Skipf("cannot take port %d to stand in for another Art-Net program: %v", testArtNetPort, err)
 				}
 				defer holder.Close()
+			} else if probe, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort}); err != nil {
+				heldBefore = err
+			} else {
+				probe.Close()
 			}
 
 			var log bytes.Buffer
@@ -443,8 +466,15 @@ func TestInitChromatikWithoutListenSubnetRemoteDestination(t *testing.T) {
 			}
 
 			// With the game running, another program can still take the
-			// Art-Net port on the address the game sends from.
+			// Art-Net port on the address the game sends from. That can
+			// only be tried with a port that was free to begin with. If
+			// it was not, everything above has been checked all the same,
+			// with a real program holding the port.
 			if !portTaken {
+				if heldBefore != nil {
+					t.Skipf("port %d on %v was taken before the game started, by another program on this machine (a running Chromatik?), so whether the game leaves it free cannot be checked here: %v",
+						testArtNetPort, from, heldBefore)
+				}
 				later, err := net.ListenUDP("udp", &net.UDPAddr{IP: from, Port: testArtNetPort})
 				if err != nil {
 					t.Errorf("with the game running, port %d cannot be taken: %v", testArtNetPort, err)
