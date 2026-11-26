@@ -53,14 +53,21 @@ fi
 # worktrees) never share or overwrite each other's image.
 rev=$(cksum <"$root/dev/Dockerfile" | awk '{ print $1 "-" $2 }')
 image=dsk-eel-dev:${GO_VERSION:+go$GO_VERSION-}$rev
-if [ "$rebuild" = 1 ] || ! "$docker" image inspect "$image" >/dev/null 2>&1; then
-	# Build output goes to stderr so `dev/run cmd | ...` only sees cmd's stdout.
-	# If a concurrent dev/run tagged the same image first, this build's own
-	# tagging step can fail; that is fine as long as the image now exists.
+# Build output goes to stderr so `dev/run cmd | ...` only sees cmd's stdout.
+build_image() {
 	# shellcheck disable=SC2086 # $build_flags is split on purpose
 	"$docker" build $build_flags ${GO_VERSION:+--build-arg "GO_VERSION=$GO_VERSION"} \
-		-t "$image" "$root/dev" >&2 ||
-		"$docker" image inspect "$image" >/dev/null
+		-t "$image" "$root/dev" >&2
+}
+if [ "$rebuild" = 1 ]; then
+	# A rebuild that fails stops here. The image from before is usually
+	# still there, but it is the one that was to be replaced: running the
+	# command in it would pass a failed rebuild off as a good one.
+	build_image
+elif ! "$docker" image inspect "$image" >/dev/null 2>&1; then
+	# If a concurrent dev/run tagged the same image first, this build's own
+	# tagging step can fail; that is fine as long as the image now exists.
+	build_image || "$docker" image inspect "$image" >/dev/null
 fi
 
 network=

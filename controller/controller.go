@@ -70,12 +70,18 @@ type Controller struct {
 	// attempts to open the joystick since it was last open.
 	// deadConnections counts the dead connections in a row (see
 	// deadConnectionTime). lossLogged is whether the last loss was logged
-	// as a warning, in which case the return is too. shortReportLogged is
-	// whether the warning about a report too short to decode has been
-	// logged for the connection that is open now.
+	// as a warning, in which case the return is too. namedManufacturer and
+	// namedProduct are what the device called itself in the last line for a
+	// connection that was a warning: the device that the log shown without
+	// -v named last. Start sets them for the first connection, before the
+	// goroutine is started. shortReportLogged is whether the warning about
+	// a report too short to decode has been logged for the connection that
+	// is open now.
 	openFailures      int
 	deadConnections   int
 	lossLogged        bool
+	namedManufacturer string
+	namedProduct      string
 	shortReportLogged bool
 
 	stop     chan struct{}
@@ -182,19 +188,27 @@ func (bs ButtonStatus) String() string {
 	return s
 }
 
+// How the device at a path is opened. Tests put their own function here.
+var openHID = OpenHID
+
 // NewController opens the joystick at config.ControllerPath and starts
 // reading it. It fails if the joystick cannot be opened: a wrong path and
 // a joystick that is not plugged in look the same, and the program should
 // not start as if it had one. Once it has started, losing the joystick is
 // not an error: see Start.
+//
+// Whatever device is at the path is taken for the joystick: nothing checks
+// that it is one. So every line the controller logs carries the path, and
+// the line for a connection says what the device there calls itself (see
+// announce).
 func NewController(config *config.Config, handleFunc func(ControllerState), lostFunc func()) (*Controller, error) {
 	if err := initHID(); err != nil {
 		return nil, err
 	}
 
 	path := config.ControllerPath
-	open := func() (Device, error) { return OpenHID(path) }
-	c, err := Start(config.Logger, open, DefaultRetryInterval, handleFunc, lostFunc)
+	open := func() (Device, error) { return openHID(path) }
+	c, err := Start(config.Logger.With("path", path), open, DefaultRetryInterval, handleFunc, lostFunc)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open the joystick at %q (set with --joystick; --keyboard steers with the keyboard, --nojoy --demo runs with no input at all): %w", path, err)
 	}
@@ -206,6 +220,10 @@ func NewController(config *config.Config, handleFunc func(ControllerState), lost
 // nothing. A joystick that stops answering later is not an error: the
 // goroutine calls lostFunc and tries to open it again every retryInterval
 // until that works.
+//
+// The device that was opened is logged as a warning. Nothing is wrong, but
+// warnings are what the log shows without -v, and which device the game
+// took for the joystick has to be there.
 func Start(logger *slog.Logger, open OpenFunc, retryInterval time.Duration, handleFunc func(ControllerState), lostFunc func()) (*Controller, error) {
 	device, err := open()
 	if err != nil {
@@ -213,7 +231,7 @@ func Start(logger *slog.Logger, open OpenFunc, retryInterval time.Duration, hand
 	}
 
 	c := newController(logger, open, retryInterval, handleFunc, lostFunc)
-	c.announce(device, slog.LevelInfo, "connected to joystick")
+	c.announce(device, "connected to joystick", true)
 	go c.run(device)
 
 	return c, nil
@@ -295,25 +313,50 @@ func (c *Controller) run(device Device) {
 	}
 }
 
-// announce logs that the joystick is open, with its identity strings,
-// which are only for the log.
-func (c *Controller) announce(device Device, level slog.Level, msg string) {
-	mfr, err := device.Manufacturer()
-	if err != nil {
-		c.logger.Warn("cannot read the joystick's manufacturer string", "error", err)
+// announce logs, once for a connection, that the joystick is open and what
+// the device calls itself. The joystick is opened by its path alone, and a
+// path like /dev/hidraw3 goes to another device when the system finds its
+// devices in another order. These strings are how someone reading the log
+// can tell that this has happened. They are only for the log: the program
+// does not check them.
+//
+// The line is a warning if warn says so. It is one as well, whatever warn
+// says, when the device does not call itself what the one in the last line
+// that was a warning did: the log shown without -v would otherwise go on
+// naming a device that is no longer the one being read. In every other case
+// the line is only shown with -v.
+//
+// A string that cannot be read is logged at the same level, so that it is
+// held back whenever the line it belongs to is. It counts as empty.
+func (c *Controller) announce(device Device, msg string, warn bool) {
+	mfr, mfrErr := device.Manufacturer()
+	product, productErr := device.Product()
+	mfr, product = strings.TrimSpace(mfr), strings.TrimSpace(product)
+
+	level := slog.LevelInfo
+	if warn || mfr != c.namedManufacturer || product != c.namedProduct {
+		level = slog.LevelWarn
+		c.namedManufacturer, c.namedProduct = mfr, product
 	}
-	product, err := device.Product()
-	if err != nil {
-		c.logger.Warn("cannot read the joystick's product string", "error", err)
+
+	ctx := context.Background()
+	if mfrErr != nil {
+		c.logger.Log(ctx, level, "cannot read the joystick's manufacturer string", "error", mfrErr)
 	}
-	c.logger.Log(context.Background(), level, msg,
-		"manufacturer", strings.TrimSpace(mfr), "product", strings.TrimSpace(product))
+	if productErr != nil {
+		c.logger.Log(ctx, level, "cannot read the joystick's product string", "error", productErr)
+	}
+	c.logger.Log(ctx, level, msg, "manufacturer", mfr, "product", product)
 }
 
 // connect tries once to open a joystick that was lost and returns it, or
-// nil. On success it logs a warning if the loss was logged as one, so that
-// the two come in pairs. On failure it logs a warning for the first failed
-// attempt in a row and for an occasional one after that.
+// nil. On success it logs which device it opened: as a warning if the loss
+// was logged as one, so that the two come in pairs and the log shows what
+// came back, and also if it is not the device the log named last (see
+// announce). Otherwise the line is only shown with -v, because a device
+// that can be opened but not read comes back every interval. On failure it
+// logs a warning for the first failed attempt in a row and for an
+// occasional one after that.
 func (c *Controller) connect() Device {
 	device, err := c.open()
 	if err != nil {
@@ -325,11 +368,7 @@ func (c *Controller) connect() Device {
 		return nil
 	}
 	c.openFailures = 0
-	level := slog.LevelInfo
-	if c.lossLogged {
-		level = slog.LevelWarn
-	}
-	c.announce(device, level, "reconnected to joystick")
+	c.announce(device, "reconnected to joystick", c.lossLogged)
 
 	return device
 }

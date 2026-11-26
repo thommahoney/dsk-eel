@@ -32,7 +32,66 @@ What the machine needs:
 
 - **A 64-bit system.** `dpkg --print-architecture` must say `arm64`. A 32-bit Raspberry Pi OS does not work, even on a board with a 64-bit processor; there the shell says the file is "not found".
 - **glibc 2.34 or newer**, which Raspberry Pi OS 12 (bookworm) and later have. Raspberry Pi OS 11 is too old and says so (`GLIBC_2.34 not found`).
-- **Permission to read the joystick.** `/dev/hidraw*` usually belongs to root, so run the game with `sudo`, or add a udev rule that gives your user the device.
+- **Permission to read the joystick.** `/dev/hidraw*` usually belongs to root, so run the game with `sudo`, or add a udev rule that gives your user the device: the rule under [The joystick](#the-joystick) does that too.
+
+### The joystick
+
+The game opens the joystick by its path, `/dev/hidraw3` unless `--joystick` names another, and takes whatever device is there for the joystick: it does not check. The number in `hidrawN` is given out by the system in the order it finds the devices, so the joystick can be at another number after a restart, or after something else has been plugged in. The game then reads a device that is not the joystick: the stick does nothing, and what that device sends can be taken for moves of the stick.
+
+So that this can be seen, the log says which device was opened, when the game starts and when a lost joystick comes back:
+
+```
+time=2026-11-22T20:15:04.512Z level=WARN msg="connected to joystick" path=/dev/hidraw3 manufacturer="<who made it>" product="<what it is>"
+```
+
+Nothing is wrong when this line appears; it is a warning only because warnings are what the log shows without `-v`. If the manufacturer and the product are not the joystick's, the path is the wrong one.
+
+A device that can be opened but fails as soon as it is read comes back every second. The log does not name it every time, only about once a minute, as with its losses. A device with another manufacturer or product than the one the log named last is always named, so the last of these lines names the device that is open, or the last one that was.
+
+**Finding the path.** With the joystick plugged in, this lists every HID device with its name:
+
+```bash
+grep -H -e HID_ID -e HID_NAME /sys/class/hidraw/*/device/uevent
+```
+
+```
+/sys/class/hidraw/hidraw3/device/uevent:HID_ID=0003:0000VVVV:0000PPPP
+/sys/class/hidraw/hidraw3/device/uevent:HID_NAME=<who made it> <what it is>
+```
+
+The joystick is the one that is missing from the list when it is unplugged. One listed under `hidraw3` is at `/dev/hidraw3`, which is what `--joystick` takes.
+
+**Keeping the path the same.** In the `HID_ID` line, `VVVV` and `PPPP` are the joystick's vendor and product ID, which do not change. A udev rule can use them to give the joystick a path of its own, and to let your user read it. Put this line in `/etc/udev/rules.d/99-dsk-eel-joystick.rules`, with the two IDs in place of `VVVV` and `PPPP` and their letters in lower case (`0A1B` becomes `0a1b`):
+
+```
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="VVVV", ATTRS{idProduct}=="PPPP", SYMLINK+="dsk-eel-joystick", GROUP="input", MODE="0660"
+```
+
+`GROUP` and `MODE` give the device to the members of a group, so that the game runs without `sudo`: `id` shows the groups your user is in, and on Raspberry Pi OS `input` is usually one of them. Then load the rule and start the game with the new path:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=hidraw    # or unplug the joystick and plug it in again
+ls -l /dev/dsk-eel-joystick                      # shows which hidraw device it stands for
+dsk-eel --joystick /dev/dsk-eel-joystick
+```
+
+The rule is for a USB joystick (its `HID_ID` starts with `0003`). It has not been tried with the joystick yet. If the list shows two devices with the joystick's `HID_ID`, the rule matches both and the new path stands for only one of them, so check with the log line that it is the one that works.
+
+### The network
+
+The game sends each frame to Chromatik as seven Art-Net packets. If the system does not take one of them, the log says so once, with the system's error, and once more when a whole frame gets out again:
+
+```
+time=2026-11-22T20:15:04.512Z level=WARN msg="cannot send Art-Net frames, will keep trying" error="write udp 10.0.0.7:41234->10.0.0.5:6454: sendto: network is unreachable"
+time=2026-11-22T20:15:19.352Z level=WARN msg="sending Art-Net frames again" failed_frames=212
+```
+
+In between the game plays on, tries every frame and logs nothing more about it, so the first line without the second means that frames are still not getting out. The second line is a warning for the same reason as the joystick's.
+
+The game sends from the address this machine had on the network when the game started. If the machine loses that address, frames get out again when it has the same address back. If it comes back with a different address they do not, and the game has to be started again.
+
+These lines are only about sending. With Chromatik not running, or out of reach on a network that is up, every packet is sent without an error and the log shows nothing.
 
 ## Development
 
@@ -128,6 +187,48 @@ sudo apt-get install libudev-dev
 sudo apt install golang-go
 go build
 ```
+
+## What is checked, and how
+
+`dev/run check` runs every test there is, but the tests do not all show the same kind of thing. Some go through every case a part of the program can meet. Some things cannot go wrong because of the way the code is written. Some tests try a great many cases out of far more than can be tried. And some things no test here can reach. This section says which is which, so that nobody takes the third kind for the first. None of it adds up to a proof that the game is right.
+
+### Every case there is
+
+These parts are small enough to go through from end to end, so their tests pick no examples.
+
+- **The dome graph**, the table in [game/init.go](./game/init.go) that says which segment follows which: 49 segments with 392 links between their 98 ends. Every pixel of the frame belongs to exactly one segment. Every link comes onto another segment at one of its ends. Wherever an eel can go from one end to another, it can also come back. The ends meet in 28 junctions of three, two joints of two and a ring of ten round the foot of the dome, and in no other way. From every segment, travelling either way, an eel can get to every other. The table is also kept a second time, as the listing [game/testdata/dome-graph.txt](./game/testdata/dome-graph.txt), and compared with it link for link, so that a link that changes shows as a changed line to review.
+- **The steering rule**: which way the eel goes at the end of a segment, for each of the 16 values the four bits of the stick can have and both ways of travelling. It is checked on every segment of the dome, 1,568 cases, and on all 256 ways the four turns of a junction can share their links. A stick held up, down, left or right always leads on. A centred stick never does. A diagonal leads on only where its two turns lead the same way.
+- **The joystick decoders**: each of the two reads two bytes of a report, and is checked for all 65,536 values those can have, against a table written out separately.
+- **The keyboard reader**: it remembers how far into an escape sequence it is, one of five places, and where the stick is held, one of five positions, and the next byte has 256 values. All 6,400 steps are checked, and an arrow key steers from each of the 25 things the reader can remember, so what holds for a step holds for input of any length. Apart from that, every string of up to three bytes in which no key quits, 16.3 million of them, is typed ahead of each arrow.
+- **One step of the eel's head**: from every position and direction the head can have, with every value of the stick, where it goes next and whether the game ends there.
+- **The buttons**: every change from one set of held buttons to another, and which press it counts as.
+
+What "every case" leaves open: each of these compares the code with the rule written down a second time, in the test. A rule that is wrong in both places passes.
+
+### True by the way it is written
+
+- **A tick plays by one input.** The stick, demo mode and the lost joystick are one word in memory. A tick reads it once, and whatever changes it replaces it whole, so a tick cannot play by the stick of one moment and the demo mode of another. The tests check what this rests on: every value of the word, every event that changes it, and that a tick uses nothing but what it read.
+- **The Art-Net layout.** [game/draw.go](./game/draw.go) states the layout as constants the compiler has to work out: the 49 x 22 pixels are six universes of 170 and a last one of 58, the last one has at least 1 pixel and at most 170, and the pixels of a universe fit in its 512 bytes of data and in the packet buffer, which is the header and those 512 bytes and nothing more. A number that breaks one of these stops the build.
+
+### To a depth, or on a sample
+
+A whole game is an eel of up to 1,078 pixels on a dome with food on it, which is far more states than can be gone through. Here the tests try a great many, and say how many.
+
+- **A whole tick, against a second model of it.** The tests hold a second description of a tick, written from the rules. It shares no code with the game, and it reads the dome from the listing, not from the table. A real tick and the model's are played side by side and compared after every one: the eel point for point, what it has left to grow, the way it travels, the food and whether it has been bitten, all 1,078 pixels of the frame, and the bytes of the seven Art-Net packets, as they are built and, for some games, read back from a socket. On every tick the eel must also be in one piece, be on no pixel twice unless that is what ended the game, have between 0 and 7 left to grow, and be as long as its meals make it.
+  - *To a depth:* every input (the 16 stick values, in a demo or not, with the joystick lost or not) at every junction, on every route through the first seven junctions from each of the 49 segments an eel can start on. That is 1.8 million ticks, and reaches 12 seconds into a game. Between junctions the input does not steer, it only decides which turn signals are drawn, and there each tick is played by one input of the 64. They are picked so that every input is played with the head on every pixel, travelling either way, which is 131,712 combinations, but each on some route and not on every one. So up to that depth every route and every way of steering is gone through. The signals drawn between junctions are gone through for every pixel and input, but not for every eel that can be there. What the game chooses by chance is left to chance. Past that depth, this shows nothing.
+  - *On a sample:* 400,000 ticks of random games, with the game steering itself, with a stick that wanders, and with a player going after the food, and with eels of several hundred pixels.
+- **Where new food goes.** Every new food is held against all 784 places a food can be: it is never on the eel while a free place exists, and it is on the segment the head is on, or one junction ahead of the head, only when nothing further away has room. That is checked for every food made in the runs above, and for 40,000 foods on 10,000 crowded domes. The check of each food is complete; the domes are a sample. No game played here has left an eel with no room for food at all. What a tick does then, which is to put the food on the eel and have the eel bite it at once, is played against the model from 300 domes made up to be that full, with eels in pieces that no game could have left.
+- **What the game chooses by chance**, the turn it takes at a junction in demo mode and the place of new food, comes from a random source the tests cannot set. Every choice that comes up is checked to be one the rules allow, but they are not gone through one by one, and a run cannot be repeated exactly. A tick that fails can: the failure prints the command that plays it again.
+
+Under the race detector these runs are far shorter, as said under [Dev container](#dev-container): the search stops after the first junction.
+
+### Not checked by anything here
+
+- **That the table matches the dome.** The tests show that the table is consistent with itself and has not changed. Whether the segments really meet where the table says, in which order the lights on a pipe are wired, and whether pushing the stick up sends the eel the way someone standing in the dome calls up, can only be checked at the dome, or by reading the listing against [docs/lights-diagram.png](./docs/lights-diagram.png).
+- **What Chromatik and Ableton do** with what they are sent. The tests compare the bytes that leave the game, and run neither program.
+- **The real joystick.** The decoders are checked against the tests' own reading of its reports, not against the device.
+- **Timing on the Pi**: whether the work of a tick fits in its 70 ms there, and how evenly the ticks come.
+- **A real Windows console.** The tests run on Windows too, but with no console window to type in. What the reader makes of the keys is tested the same on every system; the console itself is not.
 
 ## Design Notes
 

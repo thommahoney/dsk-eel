@@ -74,6 +74,14 @@ type Game struct {
 	frameSet   [SegmentCount * SegmentLength]bool
 	artnetBufs [universeCount][artnetPacketLen]byte
 
+	// artnetFailedFrames is render state as well: only Draw touches it.
+	// It is how many frames in a row could not be sent, and zero while
+	// frames get out; with it Draw logs the start and the end of a failure
+	// and not every frame of it. It belongs to the Game and not to one
+	// Eel, so a failure that lasts from one game into the next is still
+	// one failure.
+	artnetFailedFrames int
+
 	// brightnessIncrement is the step Mover applies to Brightness each tick.
 	brightnessIncrement float64
 }
